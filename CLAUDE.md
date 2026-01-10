@@ -1,6 +1,6 @@
 # Claude Marketplace Repository
 
-This is a Claude plugin marketplace. Personal skills go in the `personal` plugin unless user explicitly requests a new plugin.
+This is a Claude plugin marketplace. Personal skills go in the `andrewrabert-personal` plugin unless user explicitly requests a new plugin.
 
 ## Structure
 
@@ -14,7 +14,7 @@ plugins/
 
 ## Adding Skills
 
-Add new skills to `plugins/personal/skills/<skill-name>/SKILL.md`.
+Add new skills to `plugins/andrewrabert-personal/skills/<skill-name>/SKILL.md`.
 
 ## Creating New Plugins
 
