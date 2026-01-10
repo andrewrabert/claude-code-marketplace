@@ -4,11 +4,11 @@ Personal Claude Code plugins and skills.
 
 ## Plugins
 
-| Plugin   | Description                              |
-|----------|------------------------------------------|
-| personal | Personal coding preferences and patterns |
+| Plugin              | Description                              |
+|---------------------|------------------------------------------|
+| andrewrabert-personal | Personal coding preferences and patterns |
 
-### personal
+### andrewrabert-personal
 
 | Skill  | Description                                                      |
 |--------|------------------------------------------------------------------|
@@ -18,5 +18,5 @@ Personal Claude Code plugins and skills.
 
 ```
 /plugin marketplace add andrewrabert/claude-code-marketplace
-/plugin install personal@andrewrabert-marketplace
+/plugin install andrewrabert-personal@andrewrabert-marketplace
 ```
