@@ -13,6 +13,7 @@ Personal Claude Code plugins and skills.
 | Skill  | Description                                                      |
 |--------|------------------------------------------------------------------|
 | python | uv script mode, module-only imports, pathlib, asyncio.subprocess |
+| shell  | POSIX sh, 4-space indent, set -eu, uppercase constants           |
 
 ## Usage
 
