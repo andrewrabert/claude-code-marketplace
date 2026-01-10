@@ -1,0 +1,16 @@
+{
+  "name": "andrewrabert-claude-marketplace",
+  "owner": {
+    "name": "Andrew Rabert"
+  },
+  "metadata": {
+    "description": "Personal Claude skills and tools"
+  },
+  "plugins": [
+    {
+      "name": "personal",
+      "source": "./plugins/personal",
+      "description": "Personal coding preferences and patterns"
+    }
+  ]
+}
