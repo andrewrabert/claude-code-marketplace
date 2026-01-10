@@ -8,8 +8,8 @@
   },
   "plugins": [
     {
-      "name": "personal",
-      "source": "./plugins/personal",
+      "name": "andrewrabert-personal",
+      "source": "./plugins/andrewrabert-personal",
       "description": "Personal coding preferences and patterns"
     }
   ]
