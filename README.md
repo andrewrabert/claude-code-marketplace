@@ -1,4 +1,4 @@
-# Claude Marketplace
+# Claude Code Marketplace
 
 Personal Claude Code plugins and skills.
 
@@ -17,6 +17,6 @@ Personal Claude Code plugins and skills.
 ## Usage
 
 ```
-/plugin marketplace add andrewrabert/claude-marketplace
-/plugin install personal@andrewrabert-claude-marketplace
+/plugin marketplace add andrewrabert/claude-code-marketplace
+/plugin install personal@andrewrabert-marketplace
 ```
