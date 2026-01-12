@@ -23,7 +23,7 @@ Fix all errors reported by ruff check. Re-run until clean.
 **With dependencies:** use uv script mode + PEP 723 metadata:
 
 ```python
-#!/usr/bin/env -S uv --quiet run --script
+#!/usr/bin/env -S uv run
 # /// script
 # dependencies = [
 #   "package-name",
