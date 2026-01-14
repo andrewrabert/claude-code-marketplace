@@ -10,10 +10,12 @@ Personal Claude Code plugins and skills.
 
 ### andrewrabert-personal
 
-| Skill  | Description                                                      |
-|--------|------------------------------------------------------------------|
-| python | uv script mode, module-only imports, pathlib, asyncio.subprocess |
-| shell  | POSIX sh, 4-space indent, set -eu, uppercase constants           |
+| Skill    | Description                                                      |
+|----------|------------------------------------------------------------------|
+| dotfiles | Script placement, PATH setup, full-update system, dotfiles structure |
+| notes    | Obsidian vault, `notes` CLI, daily notes, dataview tasks, tag system |
+| python   | uv script mode, module-only imports, pathlib, asyncio.subprocess |
+| shell    | POSIX sh, 4-space indent, set -eu, uppercase constants           |
 
 ## Usage
 

@@ -41,6 +41,14 @@ Only create a new plugin when explicitly requested. Steps:
 
 3. Add skills in `plugins/<name>/skills/`
 
+## Versioning
+
+Plugin versions use format `YYYY.MM.DD.N` where N is incremented int for same-day releases.
+
+Examples: `2026.01.13.0`, `2026.01.13.1`
+
+Update version in `plugins/<name>/.claude-plugin/plugin.json` when releasing changes.
+
 ## Validation
 
 Always run after changes:
