@@ -5,12 +5,18 @@ This is a Claude plugin marketplace. Personal skills go in the `andrewrabert-per
 ## Structure
 
 ```
-.claude-plugin/marketplace.json    # Marketplace catalog
+.claude/skills/<skill-name>/SKILL.md   # Repo-specific skills (not distributed)
+.claude-plugin/marketplace.json        # Marketplace catalog
 plugins/
   <plugin-name>/
-    .claude-plugin/plugin.json     # Plugin manifest
-    skills/<skill-name>/SKILL.md   # Skills
+    .claude-plugin/plugin.json         # Plugin manifest
+    skills/<skill-name>/SKILL.md       # Skills
 ```
+
+## Repo-Specific Skills
+
+Skills in `.claude/skills/` are local to this repo and not distributed via the marketplace:
+- `versioning` - Use when changing plugin versions
 
 ## Adding Skills
 
