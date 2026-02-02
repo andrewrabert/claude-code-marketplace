@@ -1,5 +1,5 @@
 ---
-name: question
+name: q
 description: Answer a question directly without using tools
 disable-model-invocation: true
 ---
