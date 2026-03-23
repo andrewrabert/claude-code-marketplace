@@ -1,6 +1,7 @@
 ---
 name: q
 description: Answer a question directly without modifying anything
+user-invocable-only: true
 ---
 
 Answer this question directly and concisely. Just answer and stop.
