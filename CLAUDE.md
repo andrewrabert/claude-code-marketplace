@@ -1,6 +1,6 @@
 # Claude Marketplace Repository
 
-This is a Claude plugin marketplace. Personal skills go in the `andrewrabert-personal` plugin unless user explicitly requests a new plugin.
+This is a Claude plugin marketplace. Plugins are topical and prefixed with `andrewrabert-`. Add a skill to the plugin whose topic fits; create a new plugin only when none fits or the user requests it.
 
 ## Structure
 
@@ -18,9 +18,15 @@ plugins/
 Skills in `.claude/skills/` are local to this repo and not distributed via the marketplace:
 - `versioning` - Use when changing plugin versions
 
+## Plugins
+
+All plugin names are prefixed with `andrewrabert-`:
+- `andrewrabert-dev` - Python and shell scripting conventions
+- `andrewrabert-spinner-verbs` - reference for Claude Code's default spinner verbs
+
 ## Adding Skills
 
-Add new skills to `plugins/andrewrabert-personal/skills/<skill-name>/SKILL.md`.
+Add a skill to the topical plugin that fits: `plugins/<plugin>/skills/<skill-name>/SKILL.md`.
 
 ## Creating New Plugins
 

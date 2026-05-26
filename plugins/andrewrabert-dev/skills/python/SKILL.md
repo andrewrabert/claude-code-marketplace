@@ -23,13 +23,16 @@ Fix all errors reported by ruff check. Re-run until clean.
 **With dependencies:** use uv script mode + PEP 723 metadata:
 
 ```python
-#!/usr/bin/env -S uv run
+#!/usr/bin/env -S uv run --script
 # /// script
 # dependencies = [
 #   "package-name",
 # ]
 # ///
+"""One-line summary of what the script does."""
 ```
+
+The PEP 723 `# /// script` block stays in `#` comments above the docstring - never move it inside the docstring.
 
 **No dependencies:** standard shebang, no metadata block:
 
