@@ -332,17 +332,6 @@ subcommands never pay for it - the one exception to the imports-at-top
 rule. Check the data file exists before launching: friendly message to
 stderr ("run sync first"), return 1.
 
-## Naming Conventions
-
-| Thing | Pattern |
-|-------|---------|
-| Populate methods | `_populate_<tab>()` |
-| Data-layer query methods | `<view>_rows(query)` or `<view>s(query)` |
-| Key-binding handlers | `action_<name>()` |
-| Event handlers | `on_<widget>_<event>()` |
-| Row→cells mappers | `_<view>_cells()` classmethods |
-| Style dicts | `_<STATE>_STYLES` module constants |
-
 ## Common Mistakes
 
 - Styling via CSS instead of `rich.text.Text` cells
