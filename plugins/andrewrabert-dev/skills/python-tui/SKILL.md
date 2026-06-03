@@ -1,6 +1,6 @@
 ---
 name: python-tui
-description: Use when building or editing terminal UIs (TUIs) in Python - Textual app with tabbed DataTables, filter-as-you-type, vim keys, rich-styled cells, async workers, modal detail screens
+description: Use when building or editing terminal UIs (TUIs) in Python - Textual app with tabbed DataTables, filter-as-you-type, vim keys, rich-styled cells, async workers, modal detail screens, $EDITOR for multi-line text input
 ---
 
 # TUI Preferences
@@ -264,6 +264,40 @@ def on_data_table_row_selected(self, event):
         self.push_screen(FactsScreen(row[1], self._db.facts_for(row[2])))
 ```
 
+## $EDITOR for Text Input
+
+Multi-line or structured text input (a query, a message body, a config
+edit) goes through `$EDITOR`, not a TUI text widget - bind `e` to it.
+Seed a temp file with the current value or a template, use a meaningful
+suffix (syntax highlighting), suspend, read the result back as the
+input:
+
+```python
+async def action_edit(self):
+    editor = os.environ.get('EDITOR') or os.environ.get('VISUAL')
+    if not editor:
+        self.notify('$EDITOR is not set', severity='warning')
+        return
+    with TempPath(suffix='.sql') as path:
+        path.write_text(self._text)
+        with self.app.suspend():
+            process = await asyncio.create_subprocess_exec(
+                *shlex.split(editor), str(path)
+            )
+            await process.communicate()
+        if process.returncode:
+            self.notify(f'editor exited with {process.returncode}',
+                        severity='error')
+            return
+        self._text = path.read_text()
+        self.query_one(Static).update(self._text)
+```
+
+`shlex.split` handles editors with flags (`code -w`). Awaiting an
+asyncio subprocess inside `suspend()` is fine - nothing renders while
+suspended. Treat a non-zero exit as cancel: discard the file, keep the
+old value.
+
 ## Async Mutations
 
 Slow API calls go in `@work(group=...)` async workers - never block the
@@ -321,3 +355,5 @@ stderr ("run sync first"), return 1.
 - Omitting row counts from tab labels
 - Using `cursor_type='cell'` when rows are the unit of selection
 - No vim keys
+- Collecting multi-line text input in a TUI widget instead of `$EDITOR`
+- Launching `$EDITOR` without `app.suspend()` (garbles the terminal)
