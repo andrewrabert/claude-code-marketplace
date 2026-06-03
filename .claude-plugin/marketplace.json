@@ -15,7 +15,7 @@
     {
       "name": "andrewrabert-dev",
       "source": "./plugins/andrewrabert-dev",
-      "description": "Development conventions for Python, shell scripting, and terminal UIs"
+      "description": "Development conventions for Python, shell scripting, terminal UIs, and code comments"
     }
   ]
 }
