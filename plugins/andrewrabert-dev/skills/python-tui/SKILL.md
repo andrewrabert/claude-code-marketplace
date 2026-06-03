@@ -298,10 +298,16 @@ asyncio subprocess inside `suspend()` is fine - nothing renders while
 suspended. Treat a non-zero exit as cancel: discard the file, keep the
 old value.
 
-## Async Mutations
+## Async: Never Block the UI
 
-Slow API calls go in `@work(group=...)` async workers - never block the
-event loop. The action validates before dispatching (target already
+The event loop only does instant work. Anything that could take
+perceptible time - network calls, subprocesses, disk I/O, heavy
+computation - goes in a `@work(group=...)` async worker so the UI stays
+responsive: the cursor moves, filters refilter, tabs switch, all while
+work runs. Use async libraries and `asyncio.create_subprocess_exec`
+inside workers; wrap unavoidable sync calls in `@work(thread=True)`.
+
+For mutations, the action validates before dispatching (target already
 processed? already in flight?), captures the row key, and hands off to
 the worker:
 
@@ -351,7 +357,8 @@ stderr ("run sync first"), return 1.
 - Leaving the optimistic in-progress cell behind when a worker fails
 - Repopulating (losing sort and cursor) when an in-place cell update
   suffices
-- Blocking the event loop with sync calls instead of a `@work` worker
+- Blocking the event loop with anything slow (network, subprocess, disk,
+  compute) instead of a `@work` worker
 - Omitting row counts from tab labels
 - Using `cursor_type='cell'` when rows are the unit of selection
 - No vim keys
