@@ -22,6 +22,10 @@ new-plugin name description: setup
 check-plugin *names: setup
     "{{justfile_directory()}}/dev/marketplace.py" check-plugin {{names}}
 
+# Launch Claude to improve the named skills with the skill-creator skill
+improve *skills: setup
+    claude "Use the skill-creator skill to improve these skills: {{skills}}"
+
 # Checks run by the git pre-commit hook
 pre-commit: check-plugin bump readme lint
     git add README.md
