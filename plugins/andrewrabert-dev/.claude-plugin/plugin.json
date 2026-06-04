@@ -1,7 +1,7 @@
 {
   "name": "andrewrabert-dev",
   "description": "Development conventions for Python, shell scripting, terminal UIs, and code comments",
-  "version": "2026.06.03.8",
+  "version": "2026.06.03.9",
   "author": {
     "name": "Andrew Rabert"
   }

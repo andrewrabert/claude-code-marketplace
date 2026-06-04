@@ -38,6 +38,22 @@ session = build_session()  # assembled here for readability
 
 **The tell:** if you're writing a sentence to defend why the comment earns its place, that defense is the signal to delete it.
 
+## Reassurance Is Not a Gotcha
+
+A comment that certifies the existing code is correct — *is sound, is safe, is fine, works, resolves at link time, this is OK because…* — guards nothing. It answers a "why" (why the code is acceptable), so it slips past a loose bar, but it warns against no edit: delete it and the identical code stays. This is the affirmative twin of the tombstone below, and it's the easiest mistake to make around FFI, concurrency, and linking — where the reader can't see the external invariant and you feel the urge to vouch for the code.
+
+```python
+# Fails the bar — vouches that the code works, names no breaking edit
+# Decimal is thread-safe, so sharing this context across workers is sound
+ctx = decimal.getcontext()
+
+# Fails the bar — certifies the call resolves, warns against nothing
+# requests bundles its own CA store, so this verifies fine without certifi
+resp = session.get(url)
+```
+
+**The tell:** the comment is in the affirmative mood — it pronounces the code safe rather than warning that a change breaks it. **Beware the rescue reflex:** if the only way to keep the comment is to picture a reader who'd "fix" the code by introducing something not present at the line (a mutex, an explicit link attribute), you are manufacturing the alternative so you can defend against it. That is the same failure as inventing a wrong edit in the test above — cut it.
+
 ## A Dead Bug Is Not a Gotcha
 
 A comment can name a *real* bug and still fail — when the bug belonged to the old code and the current code no longer has it. It reads as a warning but is really a tombstone: it narrates what *used to* break, or defends why the code *isn't* written some other way. The fix removed what it guarded.
