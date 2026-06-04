@@ -64,7 +64,11 @@ class git:
 
     @staticmethod
     async def staged_paths():
-        out = await git._run("diff", "--cached", "--name-only", "-z")
+        # --diff-filter=d excludes deletions: a deleted plugin has no
+        # manifest left to bump, so it must not enter the work-list.
+        out = await git._run(
+            "diff", "--cached", "--name-only", "-z", "--diff-filter=d"
+        )
         return [pathlib.Path(name) for name in out.split("\0") if name]
 
     @staticmethod

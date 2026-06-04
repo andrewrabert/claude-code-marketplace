@@ -17,7 +17,6 @@ justfile                               # Task runner — see `just --list`
 
 All plugin names are prefixed with `andrewrabert-`:
 - `andrewrabert-dev` - Python and shell scripting conventions
-- `andrewrabert-spinner-verbs` - reference for Claude Code's default spinner verbs
 
 ## Adding Skills
 

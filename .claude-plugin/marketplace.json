@@ -8,11 +8,6 @@
   },
   "plugins": [
     {
-      "name": "andrewrabert-spinner-verbs",
-      "source": "./plugins/andrewrabert-spinner-verbs",
-      "description": "Reference for Claude Code's default spinner verbs"
-    },
-    {
       "name": "andrewrabert-dev",
       "source": "./plugins/andrewrabert-dev",
       "description": "Development conventions for Python, shell scripting, terminal UIs, and code comments"
