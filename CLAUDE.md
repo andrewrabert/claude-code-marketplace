@@ -5,18 +5,13 @@ This is a Claude plugin marketplace. Plugins are topical and prefixed with `andr
 ## Structure
 
 ```
-.claude/skills/<skill-name>/SKILL.md   # Repo-specific skills (not distributed)
 .claude-plugin/marketplace.json        # Marketplace catalog
 plugins/
   <plugin-name>/
     .claude-plugin/plugin.json         # Plugin manifest
     skills/<skill-name>/SKILL.md       # Skills
+justfile                               # Task runner — see `just --list`
 ```
-
-## Repo-Specific Skills
-
-Skills in `.claude/skills/` are local to this repo and not distributed via the marketplace:
-- `versioning` - Use when changing plugin versions
 
 ## Plugins
 
@@ -30,28 +25,23 @@ Add a skill to the topical plugin that fits: `plugins/<plugin>/skills/<skill-nam
 
 ## Creating New Plugins
 
-Only create a new plugin when explicitly requested. Steps:
+Only create a new plugin when explicitly requested:
 
-1. Create `plugins/<name>/.claude-plugin/plugin.json`:
-   ```json
-   {
-     "name": "<name>",
-     "description": "<description>",
-     "version": "1.0.0",
-     "author": { "name": "Andrew Rabert" }
-   }
-   ```
+```sh
+just new-plugin <name> "<description>"
+```
 
-2. Add to `.claude-plugin/marketplace.json` plugins array:
-   ```json
-   {
-     "name": "<name>",
-     "source": "./plugins/<name>",
-     "description": "<description>"
-   }
-   ```
+This scaffolds `plugins/<name>/.claude-plugin/plugin.json` and registers the
+plugin in `.claude-plugin/marketplace.json`. The `andrewrabert-` prefix is added
+if absent. Then add skills in `plugins/<name>/skills/`.
 
-3. Add skills in `plugins/<name>/skills/`
+### plugin.json is fully script-managed
+
+Only `description` is hand-edited. Everything else is owned by the scripts:
+`name` always equals the plugin directory, `version` is date-based (`YYYY.MM.DD.N`,
+defaulting to today and bumped by the pre-commit hook), and `author` is fixed.
+Run `just check-plugin` to normalize every manifest back to the canonical shape
+(it drops stray keys and fixes drifted fields).
 
 ## Versioning
 
@@ -59,12 +49,6 @@ Plugin versions use format `YYYY.MM.DD.N` where N is incremented int for same-da
 
 Examples: `2026.01.13.0`, `2026.01.13.1`
 
-Update version in `plugins/<name>/.claude-plugin/plugin.json` when releasing changes.
-
-## Validation
-
-Always run after changes:
-
-```sh
-claude plugin validate .
-```
+The git pre-commit hook (installed automatically by any `just` recipe) bumps
+the version of every plugin with staged changes, regenerates `README.md`, and
+runs `just lint`. No manual steps needed.
