@@ -5,11 +5,11 @@ description: Use before adding comments to code, or after writing/editing code t
 
 # Comment Discipline
 
-**Code is self-explanatory by default. Write no comment unless the one condition below holds.**
+**Eliminate the comment by default. Write one only when it is critical — the one condition below. When in doubt, cut it.**
 
 ## The One Condition
 
-Add a comment only when the *why* behind the code is non-obvious and unrecoverable from the code itself — a real gotcha that would cause a bug if missed.
+Add a comment only when it is *critical*: the *why* behind the code is non-obvious and unrecoverable from the code itself — a real gotcha that would cause a bug if missed. If it is merely helpful, nice-to-have, or you are unsure it clears the bar, eliminate it.
 
 **The test: write the wrong edit as actual code — the specific line a competent reader would put here once the comment is gone. If you can only produce it by naming an identifier that doesn't already appear at this line (a function, a global, a path not in the surrounding code), then the comment warns against something the code doesn't contain — cut it. If you can't produce a wrong line at all, cut it.** "Would cause a bug if missed" is the falsifiable bar, not a vibe. The same bar applies to doc comments (`///`, `"""`, `/** */`) — they are not exempt.
 
@@ -62,9 +62,22 @@ A comment can name a *real* bug and still fail — when the bug belonged to the 
 
 A comment phrased in the subjunctive — *would, otherwise, instead of, here … would race* — is almost always defending against an alternative the code doesn't contain. The reader can't write that alternative unless the comment teaches it to them first. That's the tell.
 
+## Narrating the Change Is Not a Gotcha
+
+A comment lives in the present tense of the code, and its audience is the next reader — who has only the code in front of them, not the version it replaced. The moment a comment explains why the code *changed* — what it used to do, what it now does *instead*, why the old way no longer works — it is narrating a transition. Transitions are events, and events belong in the commit that made them. Such a comment is a changelog entry welded to the source, where it rots undated and unauthored, a worse copy of the git log.
+
+```python
+# Fails the bar — explains the diff, not the code
+# Read straight from the source now; we no longer go through the cache,
+# instead of the adjusted value we used before
+value = source.read()
+```
+
+**The tell:** temporal, backward-pointing framing — *no longer, used to, now, instead of, we switched to.* The reader can't see the prior state, so a sentence that only lands as a contrast against it is addressed to the wrong audience. **The test:** would this still make sense to someone who never saw the previous version? If it only makes sense as "here's what changed," it is rationale-for-a-change — put it in the commit message. A genuine standing fact survives only when stated as a property of the code as it is *now*, with no reference to what it replaced.
+
 ## After Writing or Editing Code
 
-Review the comments you added or touched in this diff. For each, confirm it meets the one condition. If it doesn't, remove it and let the code carry the meaning. Leave pre-existing comments on lines you didn't change.
+Review the comments you added or touched in this diff. For each, default to removing it; keep it only if it is critical by the one condition. If it doesn't clearly clear the bar, remove it and let the code carry the meaning. Leave pre-existing comments on lines you didn't change.
 
 ## When the Bar Isn't Met, the Code Carries It
 
