@@ -5,13 +5,15 @@ description: Use before adding comments to code, or after writing/editing code t
 
 # Comment Discipline
 
-**Eliminate the comment by default. Write one only when it is critical — the one condition below. When in doubt, cut it.**
+**Eliminate the comment by default. Keep one only when you can justify it as critical to the code as it stands right now — the one condition below. The code's history is inadmissible evidence: a keep-justification that reaches for the previous version, the bug you just fixed, or the change you just made is not a justification. When in doubt, cut it.**
 
 ## The One Condition
 
 Add a comment only when it is *critical*: the *why* behind the code is non-obvious and unrecoverable from the code itself — a real gotcha that would cause a bug if missed. If it is merely helpful, nice-to-have, or you are unsure it clears the bar, eliminate it.
 
 **The test: write the wrong edit as actual code — the specific line a competent reader would put here once the comment is gone. If you can only produce it by naming an identifier that doesn't already appear at this line (a function, a global, a path not in the surrounding code), then the comment warns against something the code doesn't contain — cut it. If you can't produce a wrong line at all, cut it.** "Would cause a bug if missed" is the falsifiable bar, not a vibe. The same bar applies to doc comments (`///`, `"""`, `/** */`) — they are not exempt.
+
+The justification must be stated entirely in terms of the current code. You often arrive at a line having just changed it, so the history is vivid to you — the old bug, the subtle fix, the alternative you rejected. None of that is evidence. The next reader has only the code in front of them; a comment is critical only if *they* need it, and they never saw the version you're remembering. If the only defense you can mount for a comment involves what the code *was* — "this was broken before," "we used to do it the other way," "the fix here was subtle" — you have no defense. Cut it.
 
 If a comment does not meet that bar, the code should carry the meaning instead. Don't write the comment.
 
@@ -77,7 +79,7 @@ value = source.read()
 
 ## After Writing or Editing Code
 
-Review the comments you added or touched in this diff. For each, default to removing it; keep it only if it is critical by the one condition. If it doesn't clearly clear the bar, remove it and let the code carry the meaning. Leave pre-existing comments on lines you didn't change.
+Review the comments you added or touched in this diff. For each, default to removing it; keep it only if you can state the wrong edit it prevents *in the code as it now stands*. You just made this change, so every keep-justification will be tempted toward the history — the bug you fixed, what the line used to say, why you rewrote it. Those defend the *diff*, and the diff already has a home: the commit message. If the comment can only be defended that way, remove it. Leave pre-existing comments on lines you didn't change.
 
 ## When the Bar Isn't Met, the Code Carries It
 
