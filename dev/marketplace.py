@@ -120,7 +120,7 @@ async def bump_plugin(name):
     print(f"{name} -> {version}")
 
 
-async def bump():
+async def cmd_bump(args):
     plugins = staged_plugins(await git.staged_paths())
     await asyncio.gather(*(bump_plugin(name) for name in plugins))
 
@@ -155,7 +155,8 @@ def plugin_dirs():
     )
 
 
-async def check(names=None):
+async def cmd_check_plugin(args):
+    names = args.names
     changed = False
     for plugin_dir in plugin_dirs():
         if names and plugin_dir.name not in names:
@@ -175,7 +176,9 @@ async def check(names=None):
         print("all plugin manifests OK")
 
 
-def new_plugin(name, description):
+def cmd_new_plugin(args):
+    name = args.name
+    description = args.description
     if not name.startswith(PREFIX):
         name = PREFIX + name
     plugin_dir = REPO / "plugins" / name
@@ -238,10 +241,17 @@ def render(marketplace):
     sections = []
     for plugin in plugins:
         skills = sorted(plugin["skills"], key=lambda skill: skill["name"])
-        skills_table = github_table(
-            [[f"`{skill['name']}`", skill["description"]] for skill in skills],
-            ["Skill", "Description"],
-        ) if skills else "_No skills._"
+        skills_table = (
+            github_table(
+                [
+                    [f"`{skill['name']}`", skill["description"]]
+                    for skill in skills
+                ],
+                ["Skill", "Description"],
+            )
+            if skills
+            else "_No skills._"
+        )
         sections.append(
             SECTION.format(name=plugin["name"], skills_table=skills_table)
         )
@@ -252,7 +262,7 @@ def render(marketplace):
     )
 
 
-def readme():
+def cmd_readme(args):
     (REPO / "README.md").write_text(render(load_marketplace()))
     print(f"Wrote {REPO / 'README.md'}")
 
@@ -260,27 +270,37 @@ def readme():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("bump", help="bump versions of plugins with staged changes")
+    subparsers.add_parser(
+        "bump", help="bump versions of plugins with staged changes"
+    )
     subparsers.add_parser("readme", help="regenerate README.md")
 
     check_parser = subparsers.add_parser(
-        "check-plugin", help="normalize plugin manifests to the canonical shape"
+        "check-plugin",
+        help="normalize plugin manifests to the canonical shape",
     )
-    check_parser.add_argument("names", nargs="*", help="limit to these plugins")
+    check_parser.add_argument(
+        "names", nargs="*", help="limit to these plugins"
+    )
 
-    new_parser = subparsers.add_parser("new-plugin", help="scaffold a new plugin")
-    new_parser.add_argument("name", help="plugin name (andrewrabert- prefix added if absent)")
+    new_parser = subparsers.add_parser(
+        "new-plugin", help="scaffold a new plugin"
+    )
+    new_parser.add_argument(
+        "name", help="plugin name (andrewrabert- prefix added if absent)"
+    )
     new_parser.add_argument("description")
 
     args = parser.parse_args()
-    if args.command == "bump":
-        asyncio.run(bump())
-    elif args.command == "readme":
-        readme()
-    elif args.command == "check-plugin":
-        asyncio.run(check(args.names))
-    elif args.command == "new-plugin":
-        new_plugin(args.name, args.description)
+    match args.command:
+        case "bump":
+            asyncio.run(cmd_bump(args))
+        case "readme":
+            cmd_readme(args)
+        case "check-plugin":
+            asyncio.run(cmd_check_plugin(args))
+        case "new-plugin":
+            cmd_new_plugin(args)
 
 
 if __name__ == "__main__":
