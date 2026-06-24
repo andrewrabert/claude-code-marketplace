@@ -95,6 +95,38 @@ group.add_argument("--host", required=True)
 group.add_argument("--port", type=int, required=True)
 ```
 
+### Subcommands
+
+- Create with `add_subparsers(dest="command", required=True)`
+- Per subcommand: `x_parser = subparsers.add_parser("name", help="...")`, then
+  add its args. Subcommands with no args use a bare `subparsers.add_parser(...)`
+- Dispatch with `match args.command:`, one `case` per subcommand
+- Handlers named `cmd_<name>`, take `args` (plus shared objects), pull what they
+  need off `args`
+
+```python
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    scan_parser = subparsers.add_parser("scan", help="start library scan")
+    scan_parser.add_argument("-w", "--wait", action="store_true", help="wait for scan")
+
+    subparsers.add_parser("list", help="list libraries")  # bare: no args
+
+    search_parser = subparsers.add_parser("search", help="search items")
+    search_parser.add_argument("query", help="search term")
+
+    args = parser.parse_args()
+    match args.command:
+        case "scan":
+            cmd_scan(args)
+        case "list":
+            cmd_list(args)
+        case "search":
+            cmd_search(args)
+```
+
 ## CLI Tool Wrapper Classes
 
 Group external CLI tool calls in a class with `@staticmethod`/`@classmethod` methods:
