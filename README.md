@@ -4,9 +4,21 @@ Personal Claude Code plugins and skills.
 
 ## Plugins
 
-| Plugin             | Description                                                                          |
-|--------------------|--------------------------------------------------------------------------------------|
-| `andrewrabert-dev` | Development conventions for Python, shell scripting, terminal UIs, and code comments |
+| Plugin                       | Description                                                                                                                                                                                                            |
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `andrewrabert-design-review` | Design-reviewer agent and language-agnostic code-organization review lenses: separation of concerns, leaky abstractions, RAII/lifecycle, interface design, change resilience, dependency strategy, delivery sequencing |
+| `andrewrabert-dev`           | Development conventions for Python, shell scripting, terminal UIs, and code comments                                                                                                                                   |
+
+### andrewrabert-design-review
+
+| Skill                     | Description                                                                                                                                                                                                                                                                          |
+|---------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `boundaries-and-coupling` | Use when reviewing an implementation plan, design doc, or proposed module structure for separation of concerns, leaky abstractions, cohesion, coupling, dependency direction, layering violations, or Law of Demeter.                                                                |
+| `change-resilience`       | Use when reviewing an implementation plan or design doc for how well it absorbs change — DRY vs YAGNI balance, open/closed extension points, testability seams, and reversibility of decisions.                                                                                      |
+| `delivery-sequencing`     | Use when reviewing an implementation plan or design doc for the order it ships work in — de-risking the approach early vs merely doing the hardest part first, shipping a thin end-to-end validating slice, and not gating shippable wins behind unsolved problems.                  |
+| `dependency-strategy`     | Use when reviewing an implementation plan or design doc for how it depends on third-party code — version single-source-of-truth across the workspace, API stability of the chosen dep, blast radius on currently-working/fallback paths, and reversibility of the dependency choice. |
+| `interface-design`        | Use when reviewing an implementation plan or design doc for interface and API quality — least privilege, narrow surfaces, command/query separation, and error-handling strategy.                                                                                                     |
+| `resource-lifecycle`      | Use when reviewing an implementation plan or design doc for resource management and state — RAII/ownership, cleanup tied to lifetime, single source of truth for state, and making invalid states unrepresentable.                                                                   |
 
 ### andrewrabert-dev
 
