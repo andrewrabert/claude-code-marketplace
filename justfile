@@ -30,11 +30,24 @@ improve *skills: setup
 pre-commit: check-plugin bump readme lint
     git add README.md
 
-# Install or replace the marketplace
+# Install or replace the marketplace and enable all plugins
 install: setup
-    config_dir="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"; \
-    marketplace="${config_dir}/plugins/marketplaces/andrewrabert-marketplace"; \
-    rsync -a --delete "{{justfile_directory()}}/" "${marketplace}/"
+    #!/bin/sh
+    set -eu
+    config_dir="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
+    src="{{justfile_directory()}}"
+    manifest="${src}/.claude-plugin/marketplace.json"
+    marketplace_name="$(jq -r '.name' "${manifest}")"
+    # Refresh the on-disk marketplace source; `claude plugin install` copies from
+    # here into the plugin cache, so the rsync must land before any install.
+    rsync -a --delete "${src}/" "${config_dir}/plugins/marketplaces/${marketplace_name}/"
+    # install is a no-op when a plugin is already installed and never refreshes the
+    # cache from changed local source, so uninstall first to force a clean copy.
+    jq -r '.plugins[].name' "${manifest}" | while read -r plugin; do
+        ref="${plugin}@${marketplace_name}"
+        claude plugin uninstall "${ref}" >/dev/null 2>&1 || true
+        claude plugin install "${ref}" --scope user
+    done
 
 # Install the git pre-commit hook if missing
 setup:
