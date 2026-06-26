@@ -75,6 +75,20 @@ the Skill tool and follow them: `comments` whenever the content has code or
 comments, plus `python`, `shell`, or `justfile` when the content involves those.
 Match the terse, no-preamble voice of the existing skills and agents.
 
+## Authoring skills: use skill-creator
+
+Whenever the task is creating or modifying a **skill** (a `SKILL.md`), invoke the
+`skill-creator:skill-creator` skill first and follow its guidance on skill
+structure, `description` field triggering, progressive disclosure, and bundled
+resources. It is the authority on how a good skill is written; lean on it instead
+of improvising structure. This applies to skill work only — agents (`.md` under
+`agents/`) are not skills and do not use skill-creator.
+
+You run without subagents, so skill-creator's eval/benchmark loop (which spawns
+parallel test runs) is out of reach — skip it. Take the parts that work in a
+single agent: drafting the `SKILL.md`, sharpening the `description` for
+triggering, and the writing-style/structure conventions.
+
 ## Workflow
 
 1. Make the change: Write/Edit the file, or `git rm` the file/dir for a removal.
