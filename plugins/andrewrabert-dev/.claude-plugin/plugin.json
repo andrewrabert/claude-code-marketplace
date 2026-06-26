@@ -1,7 +1,7 @@
 {
   "name": "andrewrabert-dev",
   "description": "Development conventions for Python, shell scripting, terminal UIs, and code comments, plus a design-architect agent that reviews and advises on code-organization quality: separation of concerns, leaky abstractions, RAII/lifecycle, interface design, change resilience, dependency strategy, delivery sequencing",
-  "version": "2026.06.26.2",
+  "version": "2026.06.26.3",
   "author": {
     "name": "Andrew Rabert"
   }
