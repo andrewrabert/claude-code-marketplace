@@ -1,7 +1,7 @@
 {
   "name": "andrewrabert-design-review",
-  "description": "Design-reviewer agent and language-agnostic code-organization review lenses: separation of concerns, leaky abstractions, RAII/lifecycle, interface design, change resilience, dependency strategy, delivery sequencing",
-  "version": "2026.06.25.0",
+  "description": "Design-reviewer agent and language-agnostic code-organization review lenses: separation of concerns, leaky abstractions, RAII/lifecycle, interface design, change resilience, dependency strategy, delivery sequencing. Every finding is adversarially verified against the code by a per-finding verifier agent before it is returned",
+  "version": "2026.06.25.1",
   "author": {
     "name": "Andrew Rabert"
   }

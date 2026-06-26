@@ -4,10 +4,10 @@ Personal Claude Code plugins and skills.
 
 ## Plugins
 
-| Plugin                       | Description                                                                                                                                                                                                            |
-|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `andrewrabert-design-review` | Design-reviewer agent and language-agnostic code-organization review lenses: separation of concerns, leaky abstractions, RAII/lifecycle, interface design, change resilience, dependency strategy, delivery sequencing |
-| `andrewrabert-dev`           | Development conventions for Python, shell scripting, terminal UIs, and code comments                                                                                                                                   |
+| Plugin                       | Description                                                                                                                                                                                                                                                                                                                            |
+|------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `andrewrabert-design-review` | Design-reviewer agent and language-agnostic code-organization review lenses: separation of concerns, leaky abstractions, RAII/lifecycle, interface design, change resilience, dependency strategy, delivery sequencing. Every finding is adversarially verified against the code by a per-finding verifier agent before it is returned |
+| `andrewrabert-dev`           | Development conventions for Python, shell scripting, terminal UIs, and code comments                                                                                                                                                                                                                                                   |
 
 ### andrewrabert-design-review
 
