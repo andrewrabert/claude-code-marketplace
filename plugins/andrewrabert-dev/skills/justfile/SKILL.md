@@ -67,6 +67,29 @@ build:
   assumption about the caller's working directory. Recipes get run from
   anywhere, and `just` does not cd into the justfile's directory for you.
 
+## Wrapper recipes: forward all args to a command
+
+This is **the** way to forward all arguments to a wrapped command — always use
+it. Other approaches (`{{args}}`, bare `$@`) may look like they work in casual
+testing but silently mangle whitespace and quoting. Pair a variadic `*args`
+with `[positional-arguments]` and `"$@"`:
+
+```just
+# Run the CLI
+[positional-arguments]
+run *args:
+    @uv run my-cli "$@"
+```
+
+`[positional-arguments]` exposes the args as shell positionals so `"$@"`
+forwards each as a distinct, quote-preserving argument. Both are required:
+`"$@"` without the setting expands to nothing, and the setting without `"$@"`
+forwards nothing. Don't use `{{args}}` — it joins the args into one string the
+shell re-splits on whitespace, mangling quoted/spaced args.
+
+Set `[positional-arguments]` as a per-recipe attribute (as above), not globally
+with `set positional-arguments`, so it only affects the recipes that need it.
+
 ## Multi-line recipes
 
 Each line of a normal recipe runs in its *own* shell, so variables and `cd`
@@ -96,3 +119,6 @@ continuations and `;`.
   persist between lines.
 - Hardcoding paths or assuming the working directory instead of using
   `{{justfile_directory()}}`.
+- Forwarding args to a wrapped command with `{{args}}` instead of
+  `[positional-arguments]` + `"$@"` — quoted/whitespace args get re-split and
+  mangled.
