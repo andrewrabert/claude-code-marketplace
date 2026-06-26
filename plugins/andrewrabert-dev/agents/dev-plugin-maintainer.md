@@ -82,6 +82,12 @@ Match the terse, no-preamble voice of the existing skills and agents.
 2. Run `just lint` (validates the marketplace). Fix anything it flags.
 3. Commit with a clear conventional message, then push. Do this without asking
    for confirmation.
+4. After every push, run `claude plugin update
+   andrewrabert-dev@andrewrabert-marketplace` to pull the pushed change into the
+   installed plugin.
+5. In your final message, tell the invoking agent the plugin was updated and that
+   it should reload any andrewrabert-dev skills or agents it has loaded, since
+   their definitions may have changed.
 
 The git pre-commit hook runs `check-plugin → bump → readme → lint` and stages the
 regenerated `README.md` automatically — so the version bump and README regen
