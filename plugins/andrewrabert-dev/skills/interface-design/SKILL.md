@@ -1,22 +1,22 @@
 ---
 name: interface-design
-description: Use when reviewing an implementation plan or design doc for interface and API quality — least privilege, narrow surfaces, command/query separation, and error-handling strategy.
+description: Use when reviewing a plan, diff, or existing code for interface and API quality — least privilege, narrow surfaces, command/query separation, and error-handling strategy.
 ---
 
 # Interface Design
 
-**An interface is a promise you have to keep. The narrower it is, the less it constrains the implementation behind it and the fewer ways callers can misuse it. A plan that proposes a wide, surprising, or error-swallowing surface is committing to all of that before a line is written.** Judge the shape of the contract, not the internals.
+**An interface is a promise you have to keep. The narrower it is, the less it constrains the implementation behind it and the fewer ways callers can misuse it. A wide, surprising, or error-swallowing surface commits you to all of that — whether it's proposed in a plan or already shipped.** Judge the shape of the contract, not the internals.
 
 ## What to check
 
 - **Least privilege / smallest surface** — does each unit expose only what callers actually need? Public-by-default, "expose it in case someone wants it," and god-objects-with-30-methods all over-promise. Every exported symbol is a thing you can't change freely later.
 - **Command/query separation** — does a function either *do* something (mutate, side effect) or *answer* something (return a value), not both invisibly? A getter that also mutates, or a "check" that also creates, surprises callers and breaks reasoning about order. Mutating builders/fluent APIs are a deliberate exception — name it if so.
 - **Narrow, total signatures** — do inputs and outputs say what's really required and possible? Avoid wide param bags, boolean flags that change behavior mode (`render(thing, true, false)`), and return types that lie about failure. Prefer specific types over stringly-typed or "options struct with 12 optional fields."
-- **Error strategy, decided up front** — does the plan say *how* failures surface and *where* they're handled? Result/exception/error-code is a real choice; pick one per layer and be consistent. Flag: swallowing errors, returning sentinel values (-1, null, empty) that callers forget to check, and panics/aborts on recoverable conditions. Decide what's recoverable vs fatal at the boundary, not ad hoc.
-- **Idempotency / reentrancy where it matters** — if an operation can be retried, redelivered, or called concurrently, does the contract say whether that's safe? Plans for retries/queues/event handlers that don't address this are a finding.
+- **Error strategy, decided up front** — is it decided *how* failures surface and *where* they're handled? Result/exception/error-code is a real choice; pick one per layer and be consistent. Flag: swallowing errors, returning sentinel values (-1, null, empty) that callers forget to check, and panics/aborts on recoverable conditions. Decide what's recoverable vs fatal at the boundary, not ad hoc.
+- **Idempotency / reentrancy where it matters** — if an operation can be retried, redelivered, or called concurrently, does the contract say whether that's safe? Retry/queue/event-handler designs that don't address this are a finding.
 - **Callback & closure-bound honesty** — when a function takes a closure and runs it *inside* a loop that can retry/reconfigure/redeliver, the closure's bound is part of the contract. A `FnOnce`/one-shot callback silently forbids re-invocation — so a retry path that must run the callback again (re-record into a freshly-acquired resource, recompute against the new state) either can't retry or presents a result the callback never produced. Match the bound to the call pattern: if the loop may invoke the closure more than once, it must be a multi-call bound, and the contract should say how many times and against what state.
 
-## Tells in a plan
+## Tells
 
 - "Expose a method for …" repeated until the type has a dozen — surface creep.
 - A function name that's a noun/question (`status`, `isReady`) but the description has it changing state.
