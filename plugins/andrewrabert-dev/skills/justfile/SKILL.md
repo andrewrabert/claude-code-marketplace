@@ -90,6 +90,41 @@ shell re-splits on whitespace, mangling quoted/spaced args.
 Set `[positional-arguments]` as a per-recipe attribute (as above), not globally
 with `set positional-arguments`, so it only affects the recipes that need it.
 
+## Surface recipes in the project README
+
+When a project has a justfile, give its main `README.md` a `## Development`
+section that points at `just` and pastes the current `just --list` output, so
+contributors see the available recipes without cloning and running it:
+
+````markdown
+## Development
+
+This project uses [just](https://github.com/casey/just) as a command runner.
+
+```
+Available recipes:
+    [test]
+    test          # Run tests
+
+    [lint]
+    lint          # Lint workspace
+
+    [run]
+    run *args     # Run the app
+```
+````
+
+This is the expected shape: the `## Development` heading, the one-line
+[just](https://github.com/casey/just) pointer, then a fenced block with the
+literal `just --list` output — grouped via `[group('...')]` attributes. Paste
+the real output rather than hand-writing it, and refresh it when recipes change
+so it never drifts.
+
+Every command in the README must run through a `just` recipe — show `just
+test`, `just build`, etc., never the raw underlying command. If a documented
+step has no recipe yet, add one and reference that; don't document a bare
+command.
+
 ## Multi-line recipes
 
 Each line of a normal recipe runs in its *own* shell, so variables and `cd`
