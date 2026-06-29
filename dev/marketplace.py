@@ -172,8 +172,30 @@ async def cmd_check_plugin(args):
                 await git.add(path)
             print(f"normalized {plugin_dir.name}")
             changed = True
+    if await sync_marketplace_descriptions():
+        changed = True
     if not changed:
         print("all plugin manifests OK")
+
+
+async def sync_marketplace_descriptions():
+    mp_path = REPO / ".claude-plugin" / "marketplace.json"
+    marketplace = json.loads(mp_path.read_text())
+    changed = False
+    for entry in marketplace["plugins"]:
+        manifest = json.loads(
+            ((REPO / entry["source"]).resolve() / ".claude-plugin" / "plugin.json").read_text()
+        )
+        description = manifest.get("description", "")
+        if entry.get("description") != description:
+            entry["description"] = description
+            changed = True
+    if changed:
+        mp_path.write_text(json.dumps(marketplace, indent=2) + "\n")
+        if await git.is_tracked(mp_path):
+            await git.add(mp_path)
+        print("synced marketplace.json descriptions")
+    return changed
 
 
 def cmd_new_plugin(args):

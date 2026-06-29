@@ -4,9 +4,10 @@ Personal Claude Code plugins and skills.
 
 ## Plugins
 
-| Plugin             | Description                                                                                                                                                                                                                                                                                                          |
-|--------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `andrewrabert-dev` | Development conventions for Python, shell scripting, terminal UIs, and code comments, plus a design-architect agent that reviews and advises on code-organization quality: separation of concerns, leaky abstractions, RAII/lifecycle, interface design, change resilience, dependency strategy, delivery sequencing |
+| Plugin             | Description                                                                                                                                                                                                                                                                                                                                                                    |
+|--------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `andrewrabert-dev` | Development conventions for Python, shell scripting, terminal UIs, and code comments, plus a design-architect agent that reviews and advises on code-organization quality: separation of concerns, leaky abstractions, RAII/lifecycle, interface design, change resilience, dependency strategy, delivery sequencing                                                           |
+| `handoff-verifier` | Self-verification hooks managed by MCP tools: a Stop reminder that forces one more reasoning turn before a turn ends, plus ExitPlanMode and AskUserQuestion gates that block the tool until you self-certify the constraints are met via a token confirm. Each check is set per global, project, or session scope, and the hook concatenates the active scopes broad-to-narrow |
 
 ### andrewrabert-dev
 
@@ -24,6 +25,10 @@ Personal Claude Code plugins and skills.
 | `python-tui`              | Use when building or editing terminal UIs (TUIs) in Python - Textual app with tabbed DataTables, filter-as-you-type, vim keys, rich-styled cells, async workers, modal detail screens, $EDITOR for multi-line text input                                                                                        |
 | `resource-lifecycle`      | Use when reviewing a plan, diff, or existing code for resource management and state — RAII/ownership, cleanup tied to lifetime, single source of truth for state, and making invalid states unrepresentable.                                                                                                    |
 | `shell`                   | Use when writing shell scripts - POSIX sh default, 4-space indent, set -eu, uppercase constants, printf over echo, explicit error handling (user)                                                                                                                                                               |
+
+### handoff-verifier
+
+_No skills._
 
 ## Usage
 

@@ -11,6 +11,11 @@
       "name": "andrewrabert-dev",
       "source": "./plugins/andrewrabert-dev",
       "description": "Development conventions for Python, shell scripting, terminal UIs, and code comments, plus a design-architect agent that reviews and advises on code-organization quality: separation of concerns, leaky abstractions, RAII/lifecycle, interface design, change resilience, dependency strategy, delivery sequencing"
+    },
+    {
+      "name": "handoff-verifier",
+      "source": "./plugins/handoff-verifier",
+      "description": "Self-verification hooks managed by MCP tools: a Stop reminder that forces one more reasoning turn before a turn ends, plus ExitPlanMode and AskUserQuestion gates that block the tool until you self-certify the constraints are met via a token confirm. Each check is set per global, project, or session scope, and the hook concatenates the active scopes broad-to-narrow"
     }
   ]
 }

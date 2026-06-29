@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "handoff-verifier": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/handoff-verifier.py",
+      "args": ["mcp"]
+    }
+  }
+}
