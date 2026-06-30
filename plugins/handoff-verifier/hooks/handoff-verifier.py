@@ -51,9 +51,13 @@ def resolve_session(explicit=None):
 def resolve_project(explicit=None):
     # Kept absolute so an explicit relative --project still keys to the same
     # base64 the hook recorded from its (absolute) cwd.
-    path = (
-        pathlib.Path(explicit).absolute() if explicit else pathlib.Path.cwd()
-    )
+    if explicit:
+        path = pathlib.Path(explicit).absolute()
+    elif env := os.environ.get("CLAUDE_PROJECT_DIR", ""):
+        # use exactly as provided
+        path = pathlib.Path(env)
+    else:
+        path = pathlib.Path.cwd().absolute()
     return base64.urlsafe_b64encode(str(path).encode()).decode()
 
 
