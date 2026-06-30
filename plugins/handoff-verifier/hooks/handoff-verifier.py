@@ -2,13 +2,13 @@
 """Run handoff-verifier submit/stop/plan/ask hooks and serve their MCP management server."""
 
 import argparse
+import asyncio
+import base64
 import json
 import os
 import pathlib
 import secrets
-import subprocess
 import sys
-import urllib.parse
 
 # Friendly presets the MCP tools expose, each mapped to the (event, tool) tuple the generic
 # Store and hook actually key on. Only the MCP layer consults this; the hook matches blindly.
@@ -34,10 +34,7 @@ def mode_name(entry):
 PLUGIN_DATA_DIR = "handoff-verifier-andrewrabert-marketplace"
 
 
-def prepare_env(session):
-    """Populate the env vars Store reads so manual subcommands work outside the harness:
-    derive CLAUDE_PLUGIN_DATA from CLAUDE_CONFIG_DIR (or ~/.claude) when unset, force the
-    session id from the caller. Project stays cwd, which Store already derives."""
+def prepare_env():
     config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or str(
         pathlib.Path.home() / ".claude"
     )
@@ -45,7 +42,66 @@ def prepare_env(session):
         "CLAUDE_PLUGIN_DATA",
         str(pathlib.Path(config_dir) / "plugins" / "data" / PLUGIN_DATA_DIR),
     )
-    os.environ["CLAUDE_CODE_SESSION_ID"] = session or ""
+
+
+def resolve_session(explicit=None):
+    return explicit or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+
+
+def resolve_project(explicit=None):
+    # Kept absolute so an explicit relative --project still keys to the same
+    # base64 the hook recorded from its (absolute) cwd.
+    path = (
+        pathlib.Path(explicit).absolute() if explicit else pathlib.Path.cwd()
+    )
+    return base64.urlsafe_b64encode(str(path).encode()).decode()
+
+
+class ClaudeCode:
+    @staticmethod
+    async def session_ids(cwd=None):
+        cwd = str(cwd or pathlib.Path.cwd())
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "claude",
+                "agents",
+                "--json",
+                "--cwd",
+                cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await process.communicate()
+        except OSError:
+            return []
+        if process.returncode:
+            return []
+        try:
+            sessions = json.loads(stdout)
+        except json.JSONDecodeError:
+            return []
+        return sorted({s["sessionId"] for s in sessions if s.get("sessionId")})
+
+
+async def pick_session(explicit, required):
+    if explicit:
+        return explicit
+    ids = await ClaudeCode.session_ids()
+    match ids:
+        case [only]:
+            return only
+        case _ if not required:
+            return None
+        case []:
+            raise UserError(
+                "no active Claude session in this directory; pass --session ID"
+            )
+        case _:
+            listing = "\n".join(f"  {i}" for i in ids)
+            raise UserError(
+                "multiple active Claude sessions in this directory; "
+                f"pass --session ID to choose one:\n{listing}"
+            )
 
 
 class UserError(Exception):
@@ -62,10 +118,8 @@ class Store:
     SCOPES = (GLOBAL, PROJECT, SESSION)
     _SUFFIX = ".md"
 
-    def __init__(self):
+    def __init__(self, session, project):
         plugin_data = pathlib.Path(os.environ["CLAUDE_PLUGIN_DATA"])
-        session = os.environ["CLAUDE_CODE_SESSION_ID"]
-        project = urllib.parse.quote(str(pathlib.Path.cwd()), safe="")
         context = plugin_data / "context"
         self.dirs = {
             self.GLOBAL: context / "global",
@@ -75,6 +129,9 @@ class Store:
         self.state_dir = plugin_data / "state" / "session" / session
         for directory in (*self.dirs.values(), self.state_dir):
             directory.mkdir(parents=True, exist_ok=True)
+        for scope in self.dirs:
+            for key in MODES.values():
+                self._dir(scope, **key).mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def _encode(event, tool):
@@ -85,8 +142,18 @@ class Store:
         event, _, tool = stem.partition(".")
         return {"event": event, **({"tool": tool} if tool else {})}
 
-    def _file(self, scope, event, tool):
-        return self.dirs[scope] / f"{self._encode(event, tool)}{self._SUFFIX}"
+    def _dir(self, scope, event, tool=None):
+        return self.dirs[scope] / self._encode(event, tool)
+
+    def _entry_files(self, scope, event, tool=None):
+        directory = self._dir(scope, event, tool)
+        try:
+            return sorted(
+                (p for p in directory.iterdir() if p.suffix == self._SUFFIX),
+                key=lambda p: p.name,
+            )
+        except FileNotFoundError:
+            return []
 
     def _token_path(self, event, tool=None):
         return self.state_dir / f"{self._encode(event, tool)}.token"
@@ -121,35 +188,95 @@ class Store:
     def clear_token(self, event, tool=None):
         self._token_path(event, tool).unlink(missing_ok=True)
 
-    def get_context(self, event, tool=None, scope=None):
+    def _load(self, scope, event, tool=None):
+        return [
+            p.read_text().strip()
+            for p in self._entry_files(scope, event, tool)
+        ]
+
+    def _auto_name(self, directory):
+        n = 0
+        while (directory / f"{n}{self._SUFFIX}").exists():
+            n += 1
+        return f"{n}{self._SUFFIX}"
+
+    @staticmethod
+    def _check_index(entries, index):
+        if not entries:
+            raise UserError("no entries")
+        if not isinstance(index, int) or index < 0 or index >= len(entries):
+            raise UserError(
+                f"index {index} out of range (0..{len(entries) - 1})"
+            )
+
+    def entries(self, scope, event, tool=None):
+        return self._load(scope, event, tool)
+
+    def add_entry(self, scope, text, event, tool=None):
+        text = text.strip()
+        if not text:
+            raise UserError("entry text must not be empty")
+        directory = self._dir(scope, event, tool)
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / self._auto_name(directory)).write_text(text + "\n")
+
+    def replace_entry(self, scope, index, text, event, tool=None):
+        text = text.strip()
+        if not text:
+            raise UserError("entry text must not be empty")
+        files = self._entry_files(scope, event, tool)
+        self._check_index(files, index)
+        files[index].write_text(text + "\n")
+
+    def remove_entry(self, scope, index, event, tool=None):
+        files = self._entry_files(scope, event, tool)
+        self._check_index(files, index)
+        files[index].unlink()
+        return self._load(scope, event, tool)
+
+    def clear_context(self, scope, event, tool=None):
+        for path in self._entry_files(scope, event, tool):
+            path.unlink()
+
+    def joined(self, event, tool=None, scope=None):
         if scope is None:
-            return "\n".join(
+            return "\n\n".join(
                 text
                 for s in self.SCOPES
-                if (text := self.get_context(event, tool, s))
+                if (text := self.joined(event, tool, s))
             )
-        try:
-            return self._file(scope, event, tool).read_text().strip()
-        except FileNotFoundError:
-            return ""
-
-    def set_context(self, scope, data, event, tool=None):
-        data = data.strip()
-        path = self._file(scope, event, tool)
-        if data:
-            path.write_text(data + "\n")
-        else:
-            path.unlink(missing_ok=True)
+        return "\n\n".join(self._load(scope, event, tool))
 
     def list_context(self):
-        return {
-            scope: [
-                self._decode(p.stem)
-                for p in directory.iterdir()
-                if p.suffix == self._SUFFIX
-            ]
-            for scope, directory in self.dirs.items()
-        }
+        out = {}
+        for scope, directory in self.dirs.items():
+            items = []
+            for p in directory.iterdir():
+                if not p.is_dir():
+                    continue
+                key = self._decode(p.name)
+                count = len(self._entry_files(scope, **key))
+                if count:
+                    items.append({"key": key, "count": count})
+            out[scope] = items
+        return out
+
+
+def json_dumps(data):
+    return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def dump_context(store):
+    listing = store.list_context()
+    out = {}
+    for scope in Store.SCOPES:
+        for item in listing.get(scope, []):
+            key = item["key"]
+            entries = store.entries(scope, **key)
+            out.setdefault(mode_name(key), {}).update(
+                {f"{scope}/{i}": text for i, text in enumerate(entries)}
+            )
+    return out
 
 
 class HookRunner:
@@ -177,7 +304,7 @@ class HookRunner:
     def texts(self, event, tool):
         out = []
         for scope in Store.SCOPES:
-            text = self.store.get_context(event, tool, scope)
+            text = self.store.joined(event, tool, scope)
             if text:
                 out.append(text)
         return out
@@ -386,6 +513,14 @@ class VerifierMcpServer(McpStdioServer):
             "interrupting the user."
         ),
     }
+    INDEX_PROP = {
+        "type": "integer",
+        "description": (
+            "Zero-based position of the entry, as shown by read/list. Indices are "
+            "EPHEMERAL — they renumber whenever an entry is removed. Re-read the "
+            "verifier before targeting an index, and make one mutation at a time."
+        ),
+    }
 
     def __init__(self, store):
         self.store = (
@@ -395,24 +530,26 @@ class VerifierMcpServer(McpStdioServer):
 
     def register(self):
         self.register_tool(
-            "list",
-            (
+            name="list",
+            description=(
                 "List every active verifier across all scopes — use this whenever the user "
                 "asks what handoff verifiers are on ('are any verifiers active?', 'list my "
-                "handoff verifiers', 'what's set for this project / globally?'). Returns each "
-                "scope with the modes set there. Takes no arguments."
+                "handoff verifiers', 'what's set for this project / globally?'). Returns JSON "
+                '{mode: {"scope/index": text}} with the full text of every entry, so you can '
+                "read and target entries by their scope/index. Takes no arguments."
             ),
-            {"type": "object", "properties": {}},
-            self._list,
+            input_schema={"type": "object", "properties": {}},
+            handler=self._list,
         )
         self.register_tool(
-            "read",
-            (
-                "Read a verifier's full text for one (scope, mode); errors if it is not set. "
-                "Use list first to see what exists, then read the specific combination whose "
-                "text you need."
+            name="read",
+            description=(
+                "Read a verifier's entries for one (scope, mode); errors if it is not set. "
+                "Returns each entry on its own line prefixed by its current index "
+                "(`0: ...`). Use those indices to target edit/remove. Use list first to see "
+                "what exists, then read the specific combination whose entries you need."
             ),
-            {
+            input_schema={
                 "type": "object",
                 "properties": {
                     "scope": self.SCOPE_PROP,
@@ -420,46 +557,47 @@ class VerifierMcpServer(McpStdioServer):
                 },
                 "required": ["scope", "mode"],
             },
-            self._read,
+            handler=self._read,
         )
         self.register_tool(
-            "write",
-            (
-                "Set or replace a verifier — use this to add/turn on a stop reminder, plan "
+            name="write",
+            description=(
+                "Append a new entry to a verifier — use this to add a stop reminder, plan "
                 "gate, or ask gate ('remind yourself to run tests before finishing', 'gate "
                 "plan mode so you double-check', 'add an ask verifier so you try first'). "
-                "Overwrites the WHOLE verifier, so pass the full text, not a fragment; for a "
-                "small tweak to existing text use edit instead. Empty or whitespace-only "
-                "content DELETES (turns off) the verifier — this is how you disable one."
+                "Each entry is independent; the hook joins all entries for the mode. Creates "
+                "the verifier if it does not exist. Returns the new entry's index and the "
+                "re-numbered list. To change existing text use edit; to delete use remove."
             ),
-            {
+            input_schema={
                 "type": "object",
                 "properties": {
                     "scope": self.SCOPE_PROP,
                     "mode": self.MODE_PROP,
                     "content": {
                         "type": "string",
-                        "description": "Full verifier text; empty disables the mode.",
+                        "description": "Text of the entry to append; must not be empty.",
                     },
                 },
                 "required": ["mode", "content"],
             },
-            self._write,
+            handler=self._write,
         )
         self.register_tool(
-            "edit",
-            (
-                "Exact-string replace within an existing verifier — like the native Edit "
-                "tool, but addressed by (scope, mode) instead of a file path. Use it to "
-                "tweak existing text ('soften the global stop reminder', 'add a line to the "
-                "project plan gate') without rewriting the whole thing. old_string must be "
-                "present and unique unless replace_all is set."
+            name="edit",
+            description=(
+                "Exact-string replace within a single verifier entry — like the native Edit "
+                "tool, but addressed by (scope, mode, index) instead of a file path. Use it "
+                "to tweak existing text ('soften the global stop reminder') without "
+                "rewriting it. old_string must be present and unique within that entry "
+                "unless replace_all is set. Re-read first: indices renumber after a remove."
             ),
-            {
+            input_schema={
                 "type": "object",
                 "properties": {
                     "scope": self.SCOPE_PROP,
                     "mode": self.MODE_PROP,
+                    "index": self.INDEX_PROP,
                     "old_string": {
                         "type": "string",
                         "description": "Exact text to replace; must be unique unless replace_all.",
@@ -473,20 +611,39 @@ class VerifierMcpServer(McpStdioServer):
                         "description": "Replace every occurrence (default false).",
                     },
                 },
-                "required": ["mode", "old_string", "new_string"],
+                "required": ["mode", "index", "old_string", "new_string"],
             },
-            self._edit,
+            handler=self._edit,
         )
         self.register_tool(
-            "confirm",
-            (
+            name="remove",
+            description=(
+                "Remove a single entry from a verifier, addressed by (scope, mode, index). "
+                "Use list/read to see current indices first. Returns the re-numbered list; "
+                "removing the last entry turns the verifier off entirely. Indices are "
+                "ephemeral — remove one entry at a time and re-read before the next."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "scope": self.SCOPE_PROP,
+                    "mode": self.MODE_PROP,
+                    "index": self.INDEX_PROP,
+                },
+                "required": ["mode", "index"],
+            },
+            handler=self._remove,
+        )
+        self.register_tool(
+            name="confirm",
+            description=(
                 "Confirm you have satisfied a plan or ask gate's constraints, using the token "
                 "shown in the gate's denial message. Call this only AFTER the gated tool "
                 "(ExitPlanMode or AskUserQuestion) has been blocked and shown its constraints "
                 "and token, and only once you genuinely comply. Unlocks exactly one retry of "
                 "that gated call."
             ),
-            {
+            input_schema={
                 "type": "object",
                 "properties": {
                     "mode": {
@@ -504,7 +661,7 @@ class VerifierMcpServer(McpStdioServer):
                 },
                 "required": ["mode", "token"],
             },
-            self._confirm,
+            handler=self._confirm,
         )
 
     def _resolve(self, arguments, require_scope=False):
@@ -519,77 +676,110 @@ class VerifierMcpServer(McpStdioServer):
             raise UserError(f"unknown mode: {mode!r}")
         return scope, mode, MODES[mode]
 
+    @staticmethod
+    def _index(arguments):
+        index = arguments.get("index")
+        if isinstance(index, bool) or not isinstance(index, int):
+            raise UserError("index must be an integer")
+        return index
+
     def _list(self, arguments):
         return self.do_list()
 
     def _read(self, arguments):
         scope, mode, key = self._resolve(arguments, require_scope=True)
-        return self.do_read(scope, mode, key)
+        return self.do_read(scope=scope, mode=mode, key=key)
 
     def _write(self, arguments):
         scope, mode, key = self._resolve(arguments)
-        return self.do_write(scope, mode, key, arguments.get("content", ""))
+        return self.do_write(
+            scope=scope,
+            mode=mode,
+            key=key,
+            content=arguments.get("content", ""),
+        )
 
     def _edit(self, arguments):
         scope, mode, key = self._resolve(arguments)
         return self.do_edit(
-            scope,
-            mode,
-            key,
-            arguments.get("old_string", ""),
-            arguments.get("new_string", ""),
-            bool(arguments.get("replace_all")),
+            scope=scope,
+            mode=mode,
+            key=key,
+            index=self._index(arguments),
+            old_string=arguments.get("old_string", ""),
+            new_string=arguments.get("new_string", ""),
+            replace_all=bool(arguments.get("replace_all")),
+        )
+
+    def _remove(self, arguments):
+        scope, mode, key = self._resolve(arguments)
+        return self.do_remove(
+            scope=scope, mode=mode, key=key, index=self._index(arguments)
         )
 
     def _confirm(self, arguments):
         scope, mode, key = self._resolve(arguments)
-        return self.do_confirm(mode, key, arguments.get("token", ""))
+        return self.do_confirm(
+            mode=mode, key=key, token=arguments.get("token", "")
+        )
+
+    @staticmethod
+    def _render(entries):
+        return "\n".join(f"{i}: {text}" for i, text in enumerate(entries))
 
     def do_list(self):
-        listing = self.store.list_context()
-        lines = []
-        for scope in Store.SCOPES:
-            entries = listing.get(scope, [])
-            if entries:
-                modes = ", ".join(sorted(mode_name(e) for e in entries))
-                lines.append(f"{scope}: {modes}")
-        return "\n".join(lines) if lines else "no verifiers set"
+        return json_dumps(dump_context(self.store))
 
     def do_read(self, scope, mode, key):
-        text = self.store.get_context(scope=scope, **key)
-        if not text:
+        entries = self.store.entries(scope, **key)
+        if not entries:
             raise UserError(f"no {mode} verifier at {scope} scope")
-        return text
+        return self._render(entries)
 
     def do_write(self, scope, mode, key, content):
         if not content.strip():
-            if not self.store.get_context(scope=scope, **key):
-                return f"no {mode} verifier at {scope} scope to remove"
-            self.store.set_context(scope, "", **key)
-            return f"removed {mode} verifier at {scope} scope"
-        self.store.set_context(scope, content, **key)
-        return f"wrote {mode} verifier at {scope} scope"
+            raise UserError("content must not be empty")
+        self.store.add_entry(scope, content, **key)
+        entries = self.store.entries(scope, **key)
+        return f"added {mode} entry at {scope} scope\n{self._render(entries)}"
 
-    def do_edit(self, scope, mode, key, old_string, new_string, replace_all):
+    def do_edit(
+        self, scope, mode, key, index, old_string, new_string, replace_all
+    ):
         if not old_string:
             raise UserError("old_string must not be empty")
         if old_string == new_string:
             raise UserError("old_string and new_string are identical")
-        text = self.store.get_context(scope=scope, **key)
-        if not text:
-            raise UserError(f"no {mode} verifier at {scope} scope")
+        entries = self.store.entries(scope, **key)
+        Store._check_index(entries, index)
+        text = entries[index]
         count = text.count(old_string)
         if count == 0:
-            raise UserError(f"old_string not found in {scope} {mode} verifier")
+            raise UserError(
+                f"old_string not found in {scope} {mode} entry {index}"
+            )
         if count > 1 and not replace_all:
             raise UserError(
-                f"old_string is not unique in {scope} {mode} verifier "
+                f"old_string is not unique in {scope} {mode} entry {index} "
                 f"({count} matches); pass replace_all to replace every match"
             )
-        self.store.set_context(
-            scope, text.replace(old_string, new_string), **key
+        new_text = text.replace(old_string, new_string)
+        self.store.replace_entry(
+            scope=scope, index=index, text=new_text, **key
         )
-        return f"edited {mode} verifier at {scope} scope"
+        return f"edited {mode} entry {index} at {scope} scope\n{index}: {new_text}"
+
+    def do_remove(self, scope, mode, key, index):
+        entries = self.store.remove_entry(scope, index, **key)
+        if not entries:
+            return (
+                f"removed {mode} entry {index} at {scope} scope — "
+                "verifier now empty"
+            )
+        return (
+            f"removed {mode} entry {index} at {scope} scope\n"
+            f"{self._render(entries)}"
+        )
 
     def do_confirm(self, mode, key, token):
         if "tool" not in key:
@@ -605,94 +795,162 @@ class VerifierMcpServer(McpStdioServer):
 
 
 def cmd_hook(args):
-    HookRunner(Store()).run(json.load(sys.stdin))
-
-
-def cmd_mcp(args):
-    VerifierMcpServer(Store()).serve()
-
-
-def cmd_edit(args):
-    editor = os.environ.get("EDITOR")
-    if not editor:
-        raise UserError("EDITOR is not set")
-    if args.scope == Store.SESSION and not args.session:
-        raise UserError("--session is required to edit the session scope")
-    prepare_env(args.session)
-    directory = Store().dirs[args.scope]
-    subprocess.run([editor, str(directory)], check=True)
-
-
-def cmd_add(args):
-    if args.scope == Store.SESSION and not args.session:
-        raise UserError("--session is required to add to the session scope")
-    prepare_env(args.session)
-    key = MODES[args.mode]
-    store = Store()
-    existing = store.get_context(scope=args.scope, **key)
-    store.set_context(
-        args.scope,
-        f"{existing}\n{args.text}" if existing else args.text,
-        **key,
+    HookRunner(Store(resolve_session(), resolve_project())).run(
+        json.load(sys.stdin)
     )
 
 
-def cmd_list(args):
-    prepare_env(args.session)
-    listing = Store().list_context()
-    lines = []
-    for scope in Store.SCOPES:
-        entries = listing.get(scope, [])
-        if entries:
-            modes = ", ".join(sorted(mode_name(e) for e in entries))
-            lines.append(f"{scope}: {modes}")
-    print("\n".join(lines) if lines else "no verifiers set")
+def cmd_mcp(args):
+    VerifierMcpServer(Store(resolve_session(), resolve_project())).serve()
 
 
-def cmd_clear(args):
-    if args.scope == Store.SESSION and not args.session:
-        raise UserError("--session is required to clear the session scope")
-    prepare_env(args.session)
+async def cmd_edit(args):
+    editor = os.environ.get("EDITOR")
+    if not editor:
+        raise UserError("EDITOR is not set")
+    session = await pick_session(args.session, args.scope == Store.SESSION)
+    prepare_env()
+    directory = Store(
+        resolve_session(session), resolve_project(args.project)
+    ).dirs[args.scope]
+    process = await asyncio.create_subprocess_exec(editor, str(directory))
+    await process.wait()
+    if process.returncode:
+        raise UserError(f"editor exited with status {process.returncode}")
+
+
+async def cmd_add(args):
+    session = await pick_session(args.session, args.scope == Store.SESSION)
+    text = args.text
+    if text is None:
+        if sys.stdin.isatty():
+            raise UserError(
+                "text is required (pass an argument or pipe via stdin)"
+            )
+        text = sys.stdin.read()
+    prepare_env()
     key = MODES[args.mode]
-    store = Store()
-    if not store.get_context(scope=args.scope, **key):
+    Store(resolve_session(session), resolve_project(args.project)).add_entry(
+        args.scope, text, **key
+    )
+    print(f"added {args.mode} entry at {args.scope} scope")
+
+
+async def cmd_ls(args):
+    session = await pick_session(args.session, required=False)
+    prepare_env()
+    print(
+        json_dumps(
+            dump_context(
+                Store(resolve_session(session), resolve_project(args.project))
+            )
+        )
+    )
+
+
+async def cmd_path(args):
+    session = await pick_session(args.session, args.scope == Store.SESSION)
+    prepare_env()
+    print(
+        Store(resolve_session(session), resolve_project(args.project)).dirs[
+            args.scope
+        ]
+    )
+
+
+async def cmd_clear(args):
+    session = await pick_session(args.session, args.scope == Store.SESSION)
+    prepare_env()
+    key = MODES[args.mode]
+    store = Store(resolve_session(session), resolve_project(args.project))
+    if not store.entries(args.scope, **key):
         print(f"no {args.mode} verifier at {args.scope} scope")
         return
-    store.set_context(args.scope, "", **key)
-    print(f"cleared {args.mode} verifier at {args.scope} scope")
+    if args.index is not None:
+        store.remove_entry(args.scope, args.index, **key)
+        print(f"removed {args.mode} entry {args.index} at {args.scope} scope")
+    else:
+        store.clear_context(args.scope, **key)
+        print(f"cleared {args.mode} verifier at {args.scope} scope")
+
+
+def add_scope_argument(subparser):
+    subparser.add_argument(
+        "-s",
+        "--scope",
+        choices=list(Store.SCOPES),
+        required=True,
+        help="verifier scope to act on",
+    )
+
+
+def add_session_argument(subparser):
+    subparser.add_argument(
+        "--session",
+        metavar="ID",
+        help="session id; auto-resolved from this directory if omitted",
+    )
+
+
+def add_project_argument(subparser):
+    subparser.add_argument(
+        "-p",
+        "--project",
+        metavar="DIR",
+        help="project directory; defaults to the current directory",
+    )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(
-        dest="command", required=True, metavar="{hook,mcp,list,edit,add,clear}"
+        dest="command",
+        required=True,
+        metavar="{hook,mcp,ls,path,edit,add,clear}",
     )
-    subparsers.add_parser("hook")  # invoked by hooks.json
-    subparsers.add_parser("mcp")  # invoked as an MCP stdio server
-    show = subparsers.add_parser("list")  # list active verifiers across scopes
-    show.add_argument(
-        "--session", help="session id; include the session scope's verifiers"
+    subparsers.add_parser(
+        "hook", help="run as a Claude Code hook (invoked by hooks.json)"
     )
-    edit = subparsers.add_parser("edit")  # open a scope's verifiers in $EDITOR
-    edit.add_argument("scope", choices=list(Store.SCOPES))
-    edit.add_argument(
-        "--session", help="session id; required when scope is session"
+    subparsers.add_parser("mcp", help="run as an MCP stdio server")
+    show = subparsers.add_parser(
+        "ls", help="list active verifiers across scopes"
     )
-    add = subparsers.add_parser("add")  # append a line to one scope's verifier
-    add.add_argument("scope", choices=list(Store.SCOPES))
+    add_session_argument(show)
+    add_project_argument(show)
+    path = subparsers.add_parser(
+        "path", help="print the filesystem path of a scope's verifiers"
+    )
+    add_scope_argument(path)
+    add_session_argument(path)
+    add_project_argument(path)
+    edit = subparsers.add_parser(
+        "edit", help="open a scope's verifiers in $EDITOR"
+    )
+    add_scope_argument(edit)
+    add_session_argument(edit)
+    add_project_argument(edit)
+    add = subparsers.add_parser(
+        "add", help="append an entry to one scope's verifier"
+    )
+    add_scope_argument(add)
     add.add_argument("mode", choices=list(MODES))
-    add.add_argument("text")
     add.add_argument(
-        "--session", help="session id; required when scope is session"
+        "text", nargs="?", help="entry text; read from stdin if omitted"
     )
+    add_session_argument(add)
+    add_project_argument(add)
     clear = subparsers.add_parser(
-        "clear"
-    )  # remove one scope's verifier for a mode
-    clear.add_argument("scope", choices=list(Store.SCOPES))
+        "clear", help="remove one scope's verifier for a mode"
+    )
+    add_scope_argument(clear)
     clear.add_argument("mode", choices=list(MODES))
     clear.add_argument(
-        "--session", help="session id; required when scope is session"
+        "--index",
+        type=int,
+        help="entry index to remove; omit to clear the whole mode",
     )
+    add_session_argument(clear)
+    add_project_argument(clear)
 
     args = parser.parse_args()
     match args.command:
@@ -700,14 +958,16 @@ def main():
             cmd_hook(args)
         case "mcp":
             cmd_mcp(args)
-        case "list":
-            cmd_list(args)
+        case "ls":
+            asyncio.run(cmd_ls(args))
+        case "path":
+            asyncio.run(cmd_path(args))
         case "edit":
-            cmd_edit(args)
+            asyncio.run(cmd_edit(args))
         case "add":
-            cmd_add(args)
+            asyncio.run(cmd_add(args))
         case "clear":
-            cmd_clear(args)
+            asyncio.run(cmd_clear(args))
 
 
 if __name__ == "__main__":
