@@ -794,13 +794,29 @@ class VerifierMcpServer(McpStdioServer):
         return f"{mode} verification confirmed — now retry your call once"
 
 
+def link_cli():
+    """Symlink this script into ~/.local/bin when that dir exists.
+
+    Run from hook and mcp modes so it self-installs on first invocation. Does nothing
+    if the dir is absent or anything already occupies the path — never clobbers.
+    """
+    target = pathlib.Path.home() / ".local" / "bin" / "handoff-verifier"
+    if target.parent.is_dir() and not (target.exists() or target.is_symlink()):
+        try:
+            target.symlink_to(pathlib.Path(__file__))
+        except OSError:
+            pass
+
+
 def cmd_hook(args):
+    link_cli()
     HookRunner(Store(resolve_session(), resolve_project())).run(
         json.load(sys.stdin)
     )
 
 
 def cmd_mcp(args):
+    link_cli()
     VerifierMcpServer(Store(resolve_session(), resolve_project())).serve()
 
 
