@@ -8,6 +8,7 @@ Personal Claude Code plugins and skills.
 |--------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `andrewrabert-dev` | Development conventions for Python, shell scripting, terminal UIs, and code comments, plus a design-architect agent that reviews and advises on code-organization quality: separation of concerns, leaky abstractions, RAII/lifecycle, interface design, change resilience, dependency strategy, delivery sequencing                                                           |
 | `handoff-verifier` | Self-verification hooks managed by MCP tools: a Stop reminder that forces one more reasoning turn before a turn ends, plus ExitPlanMode and AskUserQuestion gates that block the tool until you self-certify the constraints are met via a token confirm. Each check is set per global, project, or session scope, and the hook concatenates the active scopes broad-to-narrow |
+| `terse`            | Mirror of the global Stop-hook verifier: answer only what was asked, lead with the direct answer, drop all filler                                                                                                                                                                                                                                                              |
 
 ### andrewrabert-dev
 
@@ -29,6 +30,12 @@ Personal Claude Code plugins and skills.
 ### handoff-verifier
 
 _No skills._
+
+### terse
+
+| Skill   | Description                                                                                                                                                  |
+|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `terse` | Restate your previous response per the terse rules — answer only what was asked, lead with the answer, telegraphic fragments, symbols over words, no filler. |
 
 ## Usage
 

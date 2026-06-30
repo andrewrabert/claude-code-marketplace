@@ -1,0 +1,8 @@
+{
+  "name": "terse",
+  "description": "Mirror of the global Stop-hook verifier: answer only what was asked, lead with the direct answer, drop all filler",
+  "version": "2026.06.30.1",
+  "author": {
+    "name": "Andrew Rabert"
+  }
+}
