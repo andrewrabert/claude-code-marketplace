@@ -12,6 +12,7 @@ The moment a verifier fires:
 - `stop` — fed back when a turn ends, forcing one more reasoning turn.
 - `plan` — gates `ExitPlanMode` until you self-certify (see Gates).
 - `ask` — gates `AskUserQuestion` the same way.
+- `verify` — no hook; stored only to be fanned out by `generate-workflow`.
 
 ## Scopes
 
@@ -32,6 +33,14 @@ unlocks exactly one retry of the gated tool. A stale or wrong token is rejected.
 `list` · `read` · `write` · `edit` · `remove` · `confirm` — entries are
 addressed by `(scope, mode, index)`; indices renumber after a `remove`.
 
+`generate-workflow` — turn the verifiers into a fan-out review. Given a
+required `mode`, it writes a Claude Code Workflow script (one agent per stored
+verifier, each auditing the working tree read-only against that verifier's
+text) and returns `{scriptPath, count, mode}`. Run it with the `Workflow` tool:
+`Workflow({ scriptPath, args: { files } })` (`files` optionally narrows the
+audit). The script lives only while the MCP server does. The CLI exposes the
+full generator (other loop engines, all modes).
+
 ## CLI
 
 Same store, outside the harness (`session` scope needs `--session <id>`):
@@ -39,9 +48,10 @@ Same store, outside the harness (`session` scope needs `--session <id>`):
 ```sh
 handoff-verifier.py ls [--session ID]
 handoff-verifier.py path  -s <scope>              # print the scope dir path
-handoff-verifier.py add   -s <scope> <mode> [text]   # text from stdin if omitted
+handoff-verifier.py add   -s <scope> (-m <mode> ... | -a) [-n NAME] [-f] [text]   # text from stdin if omitted; -n names the entry file, -f overwrites
 handoff-verifier.py edit  -s <scope>              # open scope dir in $EDITOR
-handoff-verifier.py clear -s <scope> <mode> [--index N]
+handoff-verifier.py clear -s <scope> (-m <mode> ... | -a) [--index N]
+handoff-verifier.py generate-workflow [-l audit|fix|plan] [-m <mode>] [-n ROUNDS] [-o PATH]   # emit a Workflow script (stdout unless -o)
 ```
 
 `hook` and `mcp` subcommands are invoked by `hooks.json` / `.mcp.json`, not by hand.

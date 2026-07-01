@@ -9,6 +9,7 @@ import os
 import pathlib
 import secrets
 import sys
+import tempfile
 
 # Friendly presets the MCP tools expose, each mapped to the (event, tool) tuple the generic
 # Store and hook actually key on. Only the MCP layer consults this; the hook matches blindly.
@@ -17,8 +18,18 @@ MODES = {
     "stop": {"event": "Stop"},
     "plan": {"event": "PreToolUse", "tool": "ExitPlanMode"},
     "ask": {"event": "PreToolUse", "tool": "AskUserQuestion"},
+    # Hookless: bound to no Claude hook, so it never fires at runtime; its entries
+    # exist only to be fanned out by generate-workflow.
+    "verify": None,
 }
-GATE_MODES = tuple(mode for mode, key in MODES.items() if "tool" in key)
+GATE_MODES = tuple(
+    mode for mode, key in MODES.items() if key and "tool" in key
+)
+
+
+def mode_key(mode):
+    """Store addressing for a mode; a hookless (None) mode keys on its own name."""
+    return MODES[mode] or {"event": mode}
 
 
 def mode_name(entry):
@@ -134,8 +145,10 @@ class Store:
         for directory in (*self.dirs.values(), self.state_dir):
             directory.mkdir(parents=True, exist_ok=True)
         for scope in self.dirs:
-            for key in MODES.values():
-                self._dir(scope, **key).mkdir(parents=True, exist_ok=True)
+            for mode in MODES:
+                self._dir(scope, **mode_key(mode)).mkdir(
+                    parents=True, exist_ok=True
+                )
 
     @staticmethod
     def _encode(event, tool):
@@ -162,7 +175,7 @@ class Store:
     def _token_path(self, event, tool=None):
         return self.state_dir / f"{self._encode(event, tool)}.token"
 
-    def get_token(self, event, tool=None):
+    def issue_token(self, event, tool=None):
         path = self._token_path(event, tool)
         try:
             return json.loads(path.read_text())["token"]
@@ -216,13 +229,30 @@ class Store:
     def entries(self, scope, event, tool=None):
         return self._load(scope, event, tool)
 
-    def add_entry(self, scope, text, event, tool=None):
+    def add_entry(self, scope, text, event, tool=None, name=None, force=False):
         text = text.strip()
         if not text:
             raise UserError("entry text must not be empty")
         directory = self._dir(scope, event, tool)
         directory.mkdir(parents=True, exist_ok=True)
-        (directory / self._auto_name(directory)).write_text(text + "\n")
+        if name is None:
+            target = directory / self._auto_name(directory)
+        else:
+            target = self._named(directory, name)
+            if target.exists() and not force:
+                raise UserError(
+                    f"entry {target.stem!r} already exists; pass --force to overwrite"
+                )
+        target.write_text(text + "\n")
+
+    def _named(self, directory, name):
+        stem = name.strip()
+        if stem.endswith(self._SUFFIX):
+            stem = stem[: -len(self._SUFFIX)]
+        target = directory / f"{stem}{self._SUFFIX}"
+        if not stem or target.parent.resolve() != directory.resolve():
+            raise UserError(f"invalid entry name: {name!r}")
+        return target
 
     def replace_entry(self, scope, index, text, event, tool=None):
         text = text.strip()
@@ -251,19 +281,16 @@ class Store:
             )
         return "\n\n".join(self._load(scope, event, tool))
 
-    def list_context(self):
-        out = {}
-        for scope, directory in self.dirs.items():
-            items = []
-            for p in directory.iterdir():
+    def walk(self):
+        """Yield (scope, key, entries) for every non-empty verifier, broad->narrow."""
+        for scope in self.SCOPES:
+            for p in sorted(self.dirs[scope].iterdir(), key=lambda p: p.name):
                 if not p.is_dir():
                     continue
                 key = self._decode(p.name)
-                count = len(self._entry_files(scope, **key))
-                if count:
-                    items.append({"key": key, "count": count})
-            out[scope] = items
-        return out
+                entries = self._load(scope, **key)
+                if entries:
+                    yield scope, key, entries
 
 
 def json_dumps(data):
@@ -271,16 +298,168 @@ def json_dumps(data):
 
 
 def dump_context(store):
-    listing = store.list_context()
     out = {}
-    for scope in Store.SCOPES:
-        for item in listing.get(scope, []):
-            key = item["key"]
-            entries = store.entries(scope, **key)
-            out.setdefault(mode_name(key), {}).update(
-                {f"{scope}/{i}": text for i, text in enumerate(entries)}
-            )
+    for scope, key, entries in store.walk():
+        out.setdefault(mode_name(key), {}).update(
+            {f"{scope}/{i}": text for i, text in enumerate(entries)}
+        )
     return out
+
+
+# ---------------------------------------------------------------------------
+# Workflow generation: turn stored verifiers into a Claude Code Workflow script
+# that fans out one agent per verifier. An MCP tool cannot run a Workflow (it is
+# a plain subprocess), so it only emits the script for Claude to run.
+# ---------------------------------------------------------------------------
+
+_VERDICT = """
+const VERDICT = {
+  type: 'object',
+  properties: {
+    pass: { type: 'boolean' },
+    violations: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['pass'],
+}
+"""
+
+_PLAN_META = """export const meta = {
+  name: 'verify-loop-plan',
+  description: 'Loop planner and verifiers over a plan artifact until all pass',
+  phases: [{title:'Plan'}, {title:'Verify'}],
+}
+const VERIFIERS ="""
+
+_PLAN_ENGINE = (
+    _VERDICT
+    + """
+const MAX_ROUNDS = __MAX_ROUNDS__
+
+phase('Plan')
+let plan = await agent(`Draft an implementation plan for this request:\\n${args.prompt}`)
+
+let unmet = VERIFIERS
+for (let round = 0; round < MAX_ROUNDS; round++) {
+  phase('Verify')
+  const verdicts = await parallel(unmet.map(v => () =>
+    agent(
+      `Adversarially verify the PLAN below satisfies this check; ` +
+      `default pass=false if unsure.\\n\\nPlan:\\n${plan}\\n\\nCheck ${v.id}:\\n${v.rule}`,
+      { label: `verify:${v.id}`, schema: VERDICT }
+    )
+  ))
+  unmet = unmet.filter((_, i) => !verdicts[i]?.pass)
+  log(`round ${round + 1}: ${unmet.length} unmet`)
+  if (!unmet.length) break
+
+  phase('Plan')
+  plan = await agent(
+    `Revise the plan to satisfy these checks:\\n` +
+    unmet.map(v => `- ${v.id}: ${v.rule}`).join('\\n') +
+    `\\n\\nCurrent plan:\\n${plan}`
+  )
+}
+
+return { plan, passed: VERIFIERS.filter(v => !unmet.includes(v)).map(v => v.id), failed: unmet.map(v => v.id) }
+"""
+)
+
+_AUDIT_META = """export const meta = {
+  name: 'verify-loop-audit',
+  description: 'Run verifiers over the working tree once and report violations',
+  phases: [{title:'Verify'}],
+}
+const VERIFIERS ="""
+
+_AUDIT_ENGINE = (
+    _VERDICT
+    + """
+const scope = (args.files && args.files.length)
+  ? `\\n\\nScope: restrict to ONLY these files:\\n` + args.files.join('\\n')
+  : ``
+
+phase('Verify')
+const verdicts = await parallel(VERIFIERS.map(v => () =>
+  agent(
+    `Audit the working tree against this check. Read-only: do NOT edit files. ` +
+    `List every violation as file:line + snippet.\\n\\nCheck ${v.id}:\\n${v.rule}` + scope,
+    { label: `verify:${v.id}`, schema: VERDICT }
+  )
+))
+
+return {
+  passed: VERIFIERS.filter((_, i) => verdicts[i]?.pass).map(v => v.id),
+  failed: VERIFIERS.filter((_, i) => !verdicts[i]?.pass).map(v => v.id),
+  report: VERIFIERS.map((v, i) => ({ id: v.id, pass: !!verdicts[i]?.pass, violations: verdicts[i]?.violations ?? [] })),
+}
+"""
+)
+
+_FIX_META = """export const meta = {
+  name: 'verify-loop-fix',
+  description: 'Loop verifiers and fixes over the working tree until all pass',
+  phases: [{title:'Verify'}, {title:'Fix'}],
+}
+const VERIFIERS ="""
+
+_FIX_ENGINE = (
+    _VERDICT
+    + """
+const MAX_ROUNDS = __MAX_ROUNDS__
+
+const scope = (args.files && args.files.length)
+  ? `\\n\\nScope: restrict to ONLY these files:\\n` + args.files.join('\\n')
+  : ``
+
+async function verify(list) {
+  phase('Verify')
+  const verdicts = await parallel(list.map(v => () =>
+    agent(
+      `Adversarially verify this check against the working tree; ` +
+      `default pass=false if unsure. List violations.\\n\\nCheck ${v.id}:\\n${v.rule}` + scope,
+      { label: `verify:${v.id}`, schema: VERDICT }
+    )
+  ))
+  return list.filter((_, i) => !verdicts[i]?.pass)
+}
+
+let unmet = await verify(VERIFIERS)
+for (let round = 0; round < MAX_ROUNDS && unmet.length; round++) {
+  phase('Fix')
+  await agent(
+    `Edit the code on disk to satisfy these failing checks:\\n` +
+    unmet.map(v => `- ${v.id}: ${v.rule}`).join('\\n') +
+    (args.prompt ? `\\n\\nAdditional guidance:\\n${args.prompt}` : ``) + scope
+  )
+  unmet = await verify(unmet)
+  log(`round ${round + 1}: ${unmet.length} unmet`)
+}
+
+return { passed: VERIFIERS.filter(v => !unmet.includes(v)).map(v => v.id), failed: unmet.map(v => v.id) }
+"""
+)
+
+LOOPS = {
+    "audit": (_AUDIT_META, _AUDIT_ENGINE),
+    "fix": (_FIX_META, _FIX_ENGINE),
+    "plan": (_PLAN_META, _PLAN_ENGINE),
+}
+
+
+def store_verifiers(store, mode=None):
+    """One verifier per stored entry across scopes, broad->narrow; filter by mode."""
+    return [
+        {"id": f"{scope}/{mode_name(key)}/{i}", "rule": text}
+        for scope, key, entries in store.walk()
+        if mode is None or mode_name(key) == mode
+        for i, text in enumerate(entries)
+    ]
+
+
+def build_script(verifiers, loop, max_rounds=4):
+    meta, engine = LOOPS[loop]
+    engine = engine.replace("__MAX_ROUNDS__", str(max_rounds))
+    return " ".join([meta, json.dumps(verifiers), engine]) + "\n"
 
 
 class HookRunner:
@@ -305,49 +484,41 @@ class HookRunner:
             case "PreToolUse":
                 self.deny(event, tool)
 
-    def texts(self, event, tool):
-        out = []
-        for scope in Store.SCOPES:
-            text = self.store.joined(event, tool, scope)
-            if text:
-                out.append(text)
-        return out
-
     def context(self, event, tool):
-        texts = self.texts(event, tool)
-        if texts:
+        body = self.store.joined(event, tool)
+        if body:
             json.dump(
                 {
                     "suppressOutput": True,
                     "hookSpecificOutput": {
                         "hookEventName": "UserPromptSubmit",
-                        "additionalContext": "\n\n".join(texts),
+                        "additionalContext": body,
                     },
                 },
                 sys.stdout,
             )
 
     def block(self, event, tool):
-        texts = self.texts(event, tool)
-        if texts:
+        body = self.store.joined(event, tool)
+        if body:
             json.dump(
                 {
                     "decision": "block",
-                    "reason": "\n\n".join(texts),
+                    "reason": body,
                     "suppressOutput": True,
                 },
                 sys.stdout,
             )
 
     def deny(self, event, tool):
-        texts = self.texts(event, tool)
-        if not texts:
+        body = self.store.joined(event, tool)
+        if not body:
             return
         if self.store.is_token_verified(event, tool):
             self.store.clear_token(event, tool)
             return
-        token = self.store.get_token(event, tool)
-        reason = "\n\n".join(texts) + "\n\n" + self.proceed(tool, token)
+        token = self.store.issue_token(event, tool)
+        reason = body + "\n\n" + self.proceed(tool, token)
         json.dump(
             {
                 "suppressOutput": True,
@@ -514,7 +685,8 @@ class VerifierMcpServer(McpStdioServer):
             "gate that blocks "
             "ExitPlanMode until the agent self-certifies via the confirm tool. ask = a gate "
             "that blocks AskUserQuestion the same way, forcing a real attempt before "
-            "interrupting the user."
+            "interrupting the user. verify = NOT a hook; it never fires at runtime. Its "
+            "entries are stored solely to be fanned out by generate-workflow."
         ),
     }
     INDEX_PROP = {
@@ -529,6 +701,14 @@ class VerifierMcpServer(McpStdioServer):
     def __init__(self, store):
         self.store = (
             store  # register() runs inside super().__init__, so set first
+        )
+        # Generated Workflow scripts live exactly as long as this server: the
+        # handle is finalized (file deleted) when the process exits.
+        self._script = tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".gen.js",
+            prefix="handoff-verifier-",
+            delete=True,
         )
         super().__init__("handoff-verifier")
 
@@ -667,6 +847,25 @@ class VerifierMcpServer(McpStdioServer):
             },
             handler=self._confirm,
         )
+        self.register_tool(
+            name="generate-workflow",
+            description=(
+                "Generate a Claude Code Workflow script that fans out ONE agent per stored "
+                "verifier of the given mode, each auditing the working tree (read-only) against "
+                "that verifier's text. Use when the user wants to actually run their handoff "
+                "verifiers as a review ('run my stop verifiers over the code', 'audit against my "
+                "plan gates'). Writes the script to a temp file and returns JSON "
+                "{scriptPath, count, mode}. AFTER calling this, run the script with the Workflow "
+                "tool: Workflow({ scriptPath, args: { files } }) — `files` is an optional array "
+                "narrowing the audit to those paths. Errors if no verifier of that mode is set."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {"mode": self.MODE_PROP},
+                "required": ["mode"],
+            },
+            handler=self._generate_workflow,
+        )
 
     def _resolve(self, arguments, require_scope=False):
         """Resolve (scope, mode, key) from raw tool arguments, validating each."""
@@ -678,7 +877,7 @@ class VerifierMcpServer(McpStdioServer):
         mode = arguments.get("mode")
         if mode not in MODES:
             raise UserError(f"unknown mode: {mode!r}")
-        return scope, mode, MODES[mode]
+        return scope, mode, mode_key(mode)
 
     @staticmethod
     def _index(arguments):
@@ -687,69 +886,34 @@ class VerifierMcpServer(McpStdioServer):
             raise UserError("index must be an integer")
         return index
 
-    def _list(self, arguments):
-        return self.do_list()
-
-    def _read(self, arguments):
-        scope, mode, key = self._resolve(arguments, require_scope=True)
-        return self.do_read(scope=scope, mode=mode, key=key)
-
-    def _write(self, arguments):
-        scope, mode, key = self._resolve(arguments)
-        return self.do_write(
-            scope=scope,
-            mode=mode,
-            key=key,
-            content=arguments.get("content", ""),
-        )
-
-    def _edit(self, arguments):
-        scope, mode, key = self._resolve(arguments)
-        return self.do_edit(
-            scope=scope,
-            mode=mode,
-            key=key,
-            index=self._index(arguments),
-            old_string=arguments.get("old_string", ""),
-            new_string=arguments.get("new_string", ""),
-            replace_all=bool(arguments.get("replace_all")),
-        )
-
-    def _remove(self, arguments):
-        scope, mode, key = self._resolve(arguments)
-        return self.do_remove(
-            scope=scope, mode=mode, key=key, index=self._index(arguments)
-        )
-
-    def _confirm(self, arguments):
-        scope, mode, key = self._resolve(arguments)
-        return self.do_confirm(
-            mode=mode, key=key, token=arguments.get("token", "")
-        )
-
     @staticmethod
     def _render(entries):
         return "\n".join(f"{i}: {text}" for i, text in enumerate(entries))
 
-    def do_list(self):
+    def _list(self, arguments):
         return json_dumps(dump_context(self.store))
 
-    def do_read(self, scope, mode, key):
+    def _read(self, arguments):
+        scope, mode, key = self._resolve(arguments, require_scope=True)
         entries = self.store.entries(scope, **key)
         if not entries:
             raise UserError(f"no {mode} verifier at {scope} scope")
         return self._render(entries)
 
-    def do_write(self, scope, mode, key, content):
+    def _write(self, arguments):
+        scope, mode, key = self._resolve(arguments)
+        content = arguments.get("content", "")
         if not content.strip():
             raise UserError("content must not be empty")
         self.store.add_entry(scope, content, **key)
         entries = self.store.entries(scope, **key)
         return f"added {mode} entry at {scope} scope\n{self._render(entries)}"
 
-    def do_edit(
-        self, scope, mode, key, index, old_string, new_string, replace_all
-    ):
+    def _edit(self, arguments):
+        scope, mode, key = self._resolve(arguments)
+        index = self._index(arguments)
+        old_string = arguments.get("old_string", "")
+        new_string = arguments.get("new_string", "")
         if not old_string:
             raise UserError("old_string must not be empty")
         if old_string == new_string:
@@ -762,7 +926,7 @@ class VerifierMcpServer(McpStdioServer):
             raise UserError(
                 f"old_string not found in {scope} {mode} entry {index}"
             )
-        if count > 1 and not replace_all:
+        if count > 1 and not bool(arguments.get("replace_all")):
             raise UserError(
                 f"old_string is not unique in {scope} {mode} entry {index} "
                 f"({count} matches); pass replace_all to replace every match"
@@ -773,7 +937,9 @@ class VerifierMcpServer(McpStdioServer):
         )
         return f"edited {mode} entry {index} at {scope} scope\n{index}: {new_text}"
 
-    def do_remove(self, scope, mode, key, index):
+    def _remove(self, arguments):
+        scope, mode, key = self._resolve(arguments)
+        index = self._index(arguments)
         entries = self.store.remove_entry(scope, index, **key)
         if not entries:
             return (
@@ -785,17 +951,39 @@ class VerifierMcpServer(McpStdioServer):
             f"{self._render(entries)}"
         )
 
-    def do_confirm(self, mode, key, token):
+    def _confirm(self, arguments):
+        scope, mode, key = self._resolve(arguments)
         if "tool" not in key:
             raise UserError(
                 f"confirm applies to {' or '.join(GATE_MODES)} (got {mode!r})"
             )
-        if not self.store.confirm_token(token, **key):
+        if not self.store.confirm_token(arguments.get("token", ""), **key):
             raise UserError(
                 f"no matching pending {mode} verification — make the gated call first so its "
                 "constraints and token are shown, then confirm with that exact token"
             )
         return f"{mode} verification confirmed — now retry your call once"
+
+    def _generate_workflow(self, arguments):
+        mode = arguments.get("mode")
+        if mode not in MODES:
+            raise UserError(f"unknown mode: {mode!r}")
+        verifiers = store_verifiers(self.store, mode)
+        if not verifiers:
+            raise UserError(
+                f"no {mode} verifier set in any scope — nothing to fan out"
+            )
+        self._script.seek(0)
+        self._script.truncate()
+        self._script.write(build_script(verifiers, "audit"))
+        self._script.flush()
+        return json_dumps(
+            {
+                "scriptPath": self._script.name,
+                "count": len(verifiers),
+                "mode": mode,
+            }
+        )
 
 
 def link_cli():
@@ -840,6 +1028,8 @@ async def cmd_edit(args):
 
 
 async def cmd_add(args):
+    if args.force and not args.name:
+        raise UserError("--force only applies with --name")
     session = await pick_session(args.session, args.scope == Store.SESSION)
     text = args.text
     if text is None:
@@ -849,11 +1039,17 @@ async def cmd_add(args):
             )
         text = sys.stdin.read()
     prepare_env()
-    key = MODES[args.mode]
-    Store(resolve_session(session), resolve_project(args.project)).add_entry(
-        args.scope, text, **key
-    )
-    print(f"added {args.mode} entry at {args.scope} scope")
+    store = Store(resolve_session(session), resolve_project(args.project))
+    for mode in resolve_modes(args):
+        store.add_entry(
+            args.scope,
+            text,
+            name=args.name,
+            force=args.force,
+            **mode_key(mode),
+        )
+        named = f" {args.name!r}" if args.name else ""
+        print(f"added {mode} entry{named} at {args.scope} scope")
 
 
 async def cmd_ls(args):
@@ -881,17 +1077,57 @@ async def cmd_path(args):
 async def cmd_clear(args):
     session = await pick_session(args.session, args.scope == Store.SESSION)
     prepare_env()
-    key = MODES[args.mode]
     store = Store(resolve_session(session), resolve_project(args.project))
-    if not store.entries(args.scope, **key):
-        print(f"no {args.mode} verifier at {args.scope} scope")
-        return
-    if args.index is not None:
-        store.remove_entry(args.scope, args.index, **key)
-        print(f"removed {args.mode} entry {args.index} at {args.scope} scope")
+    for mode in resolve_modes(args):
+        key = mode_key(mode)
+        if not store.entries(args.scope, **key):
+            print(f"no {mode} verifier at {args.scope} scope")
+            continue
+        if args.index is not None:
+            store.remove_entry(args.scope, args.index, **key)
+            print(f"removed {mode} entry {args.index} at {args.scope} scope")
+        else:
+            store.clear_context(args.scope, **key)
+            print(f"cleared {mode} verifier at {args.scope} scope")
+
+
+async def cmd_generate_workflow(args):
+    session = await pick_session(args.session, required=False)
+    prepare_env()
+    store = Store(resolve_session(session), resolve_project(args.project))
+    verifiers = store_verifiers(store, args.mode)
+    if not verifiers:
+        target = f"{args.mode} verifier" if args.mode else "verifiers"
+        raise UserError(f"no {target} set in any scope — nothing to fan out")
+    script = build_script(verifiers, args.loop, args.max_rounds)
+    if args.output:
+        args.output.write_text(script)
+        print(f"wrote {args.output}", file=sys.stderr)
     else:
-        store.clear_context(args.scope, **key)
-        print(f"cleared {args.mode} verifier at {args.scope} scope")
+        sys.stdout.write(script)
+
+
+def add_mode_argument(subparser):
+    group = subparser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "-m",
+        "--mode",
+        action="append",
+        dest="mode",
+        choices=list(MODES),
+        metavar="MODE",
+        help="verifier mode to act on (repeatable)",
+    )
+    group.add_argument(
+        "-a",
+        "--all",
+        action="store_true",
+        help="act on every mode",
+    )
+
+
+def resolve_modes(args):
+    return list(MODES) if args.all else list(dict.fromkeys(args.mode))
 
 
 def add_scope_argument(subparser):
@@ -926,7 +1162,7 @@ def main():
     subparsers = parser.add_subparsers(
         dest="command",
         required=True,
-        metavar="{hook,mcp,ls,path,edit,add,clear}",
+        metavar="{hook,mcp,ls,path,edit,add,clear,generate-workflow}",
     )
     subparsers.add_parser(
         "hook", help="run as a Claude Code hook (invoked by hooks.json)"
@@ -953,7 +1189,19 @@ def main():
         "add", help="append an entry to one scope's verifier"
     )
     add_scope_argument(add)
-    add.add_argument("mode", choices=list(MODES))
+    add_mode_argument(add)
+    add.add_argument(
+        "-n",
+        "--name",
+        metavar="NAME",
+        help="filename stem for the entry; defaults to an auto-incremented index",
+    )
+    add.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="overwrite an existing entry with the same --name",
+    )
     add.add_argument(
         "text", nargs="?", help="entry text; read from stdin if omitted"
     )
@@ -963,7 +1211,7 @@ def main():
         "clear", help="remove one scope's verifier for a mode"
     )
     add_scope_argument(clear)
-    clear.add_argument("mode", choices=list(MODES))
+    add_mode_argument(clear)
     clear.add_argument(
         "--index",
         type=int,
@@ -971,6 +1219,39 @@ def main():
     )
     add_session_argument(clear)
     add_project_argument(clear)
+    gen = subparsers.add_parser(
+        "generate-workflow",
+        help="emit a Workflow script fanning one agent out per verifier",
+    )
+    gen.add_argument(
+        "-l",
+        "--loop",
+        choices=list(LOOPS),
+        default="audit",
+        help="engine: audit (once, read-only), fix (verify->edit loop), plan (draft->revise)",
+    )
+    gen.add_argument(
+        "-m",
+        "--mode",
+        choices=list(MODES),
+        help="limit to one verifier mode; omit for every mode across scopes",
+    )
+    gen.add_argument(
+        "-n",
+        "--max-rounds",
+        type=int,
+        default=4,
+        help="loop round cap for fix/plan (default: 4)",
+    )
+    gen.add_argument(
+        "-o",
+        "--output",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="write the script to PATH; defaults to stdout",
+    )
+    add_session_argument(gen)
+    add_project_argument(gen)
 
     args = parser.parse_args()
     match args.command:
@@ -988,6 +1269,8 @@ def main():
             asyncio.run(cmd_add(args))
         case "clear":
             asyncio.run(cmd_clear(args))
+        case "generate-workflow":
+            asyncio.run(cmd_generate_workflow(args))
 
 
 if __name__ == "__main__":
