@@ -6,6 +6,8 @@ Deterministic (no-model) transforms over Claude Code session transcripts:
   digest   <session.jsonl>            condense one transcript to a bug/friction digest
   render   <findings.json>            render a findings record to findings.md
   manifest <project-dir> [<dir>...]   enumerate sessions -> classification manifest
+  worklist <project-dir> [<dir>...]   one-shot: digest each session to --digest-dir
+                                      and emit the fan-out sweep's work-list
 
 The model step (classifying a digest into bugs/process_problems/learnings) and
 all note writes (via the notes MCP) live outside this script — see SKILL.md.
@@ -15,6 +17,7 @@ import argparse
 import json
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -81,7 +84,7 @@ def digest(path):
                 except json.JSONDecodeError:
                     pass
 
-    title = branch = None
+    title = branch = cwd = None
     times = []
     events = []
     n_prompts = n_assistant = n_errors = n_corrections = n_rejections = 0
@@ -97,6 +100,8 @@ def digest(path):
             times.append(ts)
         if b := r.get("gitBranch"):
             branch = b
+        if cwd is None and (c := r.get("cwd")):
+            cwd = c
 
         if typ == "user":
             content = r.get("message", {}).get("content")
@@ -176,13 +181,17 @@ def digest(path):
 
     return {
         "session_id": Path(path).stem,
+        "project": Path(path).parent.name,
+        "cwd": cwd,
         "title": title,
         "branch": branch,
+        "date": (started or "")[:10] or None,
         "started": started,
         "ended": ended,
         "duration_min": duration_min,
         "n_user_prompts": n_prompts,
         "n_assistant_turns": n_assistant,
+        "turn_count": n_prompts + n_assistant,
         "index": {
             "n_errors": n_errors,
             "n_tool_errors": n_tool_errors,
@@ -272,38 +281,80 @@ def render(findings):
     return "\n".join(out)
 
 
-def manifest(dirs):
-    """Enumerate sessions across project dirs into a classification manifest."""
+def _load_ids(ids_path):
+    """Read an ids file (whitespace/comma-separated) into a set, or None."""
+    if not ids_path:
+        return None
+    text = Path(ids_path).read_text()
+    return {tok for tok in re.split(r"[\s,]+", text) if tok}
+
+
+def _id_match(session_id, ids):
+    """True if ids is None (no filter) or session_id equals/prefixes an entry.
+
+    Callers routinely track sessions by the 8-char uuid prefix, so a short id
+    matches the full session_id it prefixes.
+    """
+    if ids is None:
+        return True
+    return any(session_id == i or session_id.startswith(i) for i in ids)
+
+
+def _manifest_entry(f, dg):
+    """One manifest row from a session path and its digest."""
+    return {
+        "session_id": dg["session_id"],
+        "path": str(f),
+        "project": dg["project"],
+        "cwd": dg["cwd"],
+        "title": dg["title"],
+        "branch": dg["branch"],
+        "date": dg["date"],
+        "duration_min": dg["duration_min"],
+        "turn_count": dg["turn_count"],
+        "index": dg["index"],
+        "last_message_at": dg["ended"],
+    }
+
+
+def manifest(dirs, ids=None):
+    """Enumerate sessions across project dirs into a classification manifest.
+
+    ids (optional set): keep only sessions whose id equals or is prefixed by an
+    entry — lets a sweep target a curated subset instead of whole project dirs.
+    """
     out = []
     for d in dirs:
         for f in sorted(Path(d).glob("*.jsonl")):
+            if ids is not None and not _id_match(f.stem, ids):
+                continue
+            out.append(_manifest_entry(f, digest(str(f))))
+    return out
+
+
+def worklist(dirs, digest_dir, ids=None):
+    """One-shot: digest each in-scope session and emit the fan-out work-list.
+
+    Folds the enumerate -> filter -> digest -> assemble glue into one step:
+    writes each session's digest JSON to digest_dir and returns work-list rows
+    (manifest metadata + digest_path + a single processed_at stamp for the whole
+    batch, so fan-out agents never need to call `date`).
+    """
+    digest_dir = Path(digest_dir)
+    digest_dir.mkdir(parents=True, exist_ok=True)
+    processed_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    out = []
+    for d in dirs:
+        for f in sorted(Path(d).glob("*.jsonl")):
+            if ids is not None and not _id_match(f.stem, ids):
+                continue
             dg = digest(str(f))
-            cwd = None
-            with open(f) as fh:
-                for line in fh:
-                    try:
-                        r = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if r.get("cwd"):
-                        cwd = r["cwd"]
-                        break
-            out.append(
-                {
-                    "session_id": dg["session_id"],
-                    "path": str(f),
-                    "project": f.parent.name,
-                    "cwd": cwd,
-                    "title": dg["title"],
-                    "branch": dg["branch"],
-                    "date": (dg["started"] or "")[:10],
-                    "duration_min": dg["duration_min"],
-                    "turn_count": (dg["n_user_prompts"] or 0)
-                    + (dg["n_assistant_turns"] or 0),
-                    "index": dg["index"],
-                    "last_message_at": dg["ended"],
-                }
-            )
+            dpath = digest_dir / f"{dg['session_id']}.json"
+            dpath.write_text(json.dumps(dg, indent=2))
+            row = _manifest_entry(f, dg)
+            row["digest_path"] = str(dpath)
+            row["processed_at"] = processed_at
+            out.append(row)
     return out
 
 
@@ -317,6 +368,13 @@ def main():
     sub.add_parser("render").add_argument("path")
     m = sub.add_parser("manifest")
     m.add_argument("dirs", nargs="+")
+    m.add_argument("--ids", help="file of session ids/prefixes to keep")
+    w = sub.add_parser("worklist")
+    w.add_argument("dirs", nargs="+")
+    w.add_argument(
+        "--digest-dir", required=True, help="dir to write per-session digests"
+    )
+    w.add_argument("--ids", help="file of session ids/prefixes to keep")
     args = ap.parse_args()
 
     if args.cmd == "digest":
@@ -324,7 +382,14 @@ def main():
     elif args.cmd == "render":
         print(render(json.loads(Path(args.path).read_text())))
     elif args.cmd == "manifest":
-        print(json.dumps(manifest(args.dirs), indent=1))
+        print(json.dumps(manifest(args.dirs, _load_ids(args.ids)), indent=1))
+    elif args.cmd == "worklist":
+        print(
+            json.dumps(
+                worklist(args.dirs, args.digest_dir, _load_ids(args.ids)),
+                indent=1,
+            )
+        )
 
 
 if __name__ == "__main__":
