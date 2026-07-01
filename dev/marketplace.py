@@ -184,7 +184,11 @@ async def sync_marketplace_descriptions():
     changed = False
     for entry in marketplace["plugins"]:
         manifest = json.loads(
-            ((REPO / entry["source"]).resolve() / ".claude-plugin" / "plugin.json").read_text()
+            (
+                (REPO / entry["source"]).resolve()
+                / ".claude-plugin"
+                / "plugin.json"
+            ).read_text()
         )
         description = manifest.get("description", "")
         if entry.get("description") != description:
