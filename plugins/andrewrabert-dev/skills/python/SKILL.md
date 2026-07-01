@@ -76,7 +76,6 @@ p = pathlib.Path("/tmp")
 
 ## Style
 
-- **No type annotations** - keep code clean
 - **Double blank lines** between top-level definitions (classes, functions)
 - **Named arguments** in function calls when >2 args
 - **Match statements** (Python 3.10+) for multi-branch conditionals
@@ -286,5 +285,4 @@ if __name__ == "__main__":
 - Using `subprocess.run()` instead of `asyncio.create_subprocess_exec()`
 - Missing PEP 723 block when script has dependencies
 - Missing `if __name__ == "__main__":` guard
-- Adding type hints when not needed
 - Putting imports inside functions instead of at top of file

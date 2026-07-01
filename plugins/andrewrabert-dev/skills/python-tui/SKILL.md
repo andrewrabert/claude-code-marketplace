@@ -7,7 +7,7 @@ description: Use when building or editing terminal UIs (TUIs) in Python - Textua
 
 **Project conventions take precedence unless user says otherwise.**
 
-**Invoke the python skill first** - code style (quotes, type hints, line
+**Invoke the python skill first** - code style (quotes, line
 length) comes from it and project conventions; this skill covers TUI
 architecture only.
 
