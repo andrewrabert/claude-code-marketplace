@@ -1,7 +1,7 @@
 {
   "name": "handoff-verifier",
   "description": "Self-verification hooks managed by MCP tools: a Stop reminder that forces one more reasoning turn before a turn ends, plus ExitPlanMode and AskUserQuestion gates that block the tool until you self-certify the constraints are met via a token confirm. Each check is set per global, project, or session scope, and the hook concatenates the active scopes broad-to-narrow",
-  "version": "2026.07.01.0",
+  "version": "2026.07.02.0",
   "author": {
     "name": "Andrew Rabert"
   }

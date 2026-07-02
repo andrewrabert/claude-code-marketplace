@@ -13,6 +13,9 @@ import tempfile
 
 # Friendly presets the MCP tools expose, each mapped to the (event, tool) tuple the generic
 # Store and hook actually key on. Only the MCP layer consults this; the hook matches blindly.
+# The cross-cutting bucket: its own folder, merged into every real hook event at runtime
+# rather than duplicated into each mode. Default target for add/import when no -m is given.
+ALL_MODE = "all"
 MODES = {
     "submit": {"event": "UserPromptSubmit"},
     "stop": {"event": "Stop"},
@@ -21,6 +24,8 @@ MODES = {
     # Hookless: bound to no Claude hook, so it never fires at runtime; its entries
     # exist only to be fanned out by generate-workflow.
     "verify": None,
+    # Applies to every mode; merged into each event's read at runtime (see Store.joined).
+    ALL_MODE: None,
 }
 GATE_MODES = tuple(
     mode for mode, key in MODES.items() if key and "tool" in key
@@ -74,34 +79,82 @@ def resolve_project(explicit=None):
 
 class ClaudeCode:
     @staticmethod
-    async def session_ids(cwd=None):
-        cwd = str(cwd or pathlib.Path.cwd())
+    async def sessions(cwd=None):
+        # cwd=None lists active sessions across ALL directories; pass a cwd to
+        # restrict to that directory. Returns {sessionId: cwd}.
+        args = ["--cwd", str(cwd)] if cwd is not None else []
         try:
             process = await asyncio.create_subprocess_exec(
                 "claude",
                 "agents",
                 "--json",
-                "--cwd",
-                cwd,
+                *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
             stdout, _ = await process.communicate()
         except OSError:
-            return []
+            return {}
         if process.returncode:
-            return []
+            return {}
         try:
             sessions = json.loads(stdout)
         except json.JSONDecodeError:
-            return []
-        return sorted({s["sessionId"] for s in sessions if s.get("sessionId")})
+            return {}
+        return {
+            s["sessionId"]: s.get("cwd", "")
+            for s in sessions
+            if s.get("sessionId")
+        }
+
+    @staticmethod
+    async def session_ids(cwd=None):
+        return sorted(await ClaudeCode.sessions(cwd=cwd))
+
+
+def tilde(path):
+    if not path:
+        return path
+    try:
+        return f"~/{pathlib.Path(path).relative_to(pathlib.Path.home())}"
+    except ValueError:
+        return path
+
+
+def session_lines(ids, dirs):
+    # Sort by (path, id); sessions in the current dir (shown as $PWD) sort first.
+    cwd = str(pathlib.Path.cwd())
+
+    def render(i):
+        path = dirs.get(i, "")
+        return "$PWD" if path == cwd else tilde(path)
+
+    ordered = sorted(
+        ids, key=lambda i: (dirs.get(i, "") != cwd, dirs.get(i, ""), i)
+    )
+    return [f"  {i}  {render(i)}" for i in ordered]
 
 
 async def pick_session(explicit, required):
     if explicit:
-        return explicit
-    ids = await ClaudeCode.session_ids()
+        # A prefix matches active sessions in ANY directory.
+        dirs = await ClaudeCode.sessions()
+        matches = [i for i in sorted(dirs) if i.startswith(explicit)]
+        match matches:
+            case [only]:
+                return only
+            case []:
+                raise UserError(
+                    f"no active Claude session matches --session prefix {explicit!r}"
+                )
+            case _:
+                listing = "\n".join(session_lines(matches, dirs))
+                raise UserError(
+                    "multiple active Claude sessions match --session prefix "
+                    f"{explicit!r}; pass a longer prefix:\n{listing}"
+                )
+    # Automatic resolution stays scoped to this directory.
+    ids = await ClaudeCode.session_ids(cwd=pathlib.Path.cwd())
     match ids:
         case [only]:
             return only
@@ -112,7 +165,8 @@ async def pick_session(explicit, required):
                 "no active Claude session in this directory; pass --session ID"
             )
         case _:
-            listing = "\n".join(f"  {i}" for i in ids)
+            dirs = await ClaudeCode.sessions()
+            listing = "\n".join(session_lines(dirs, dirs))
             raise UserError(
                 "multiple active Claude sessions in this directory; "
                 f"pass --session ID to choose one:\n{listing}"
@@ -211,11 +265,22 @@ class Store:
             for p in self._entry_files(scope, event, tool)
         ]
 
-    def _auto_name(self, directory):
-        n = 0
-        while (directory / f"{n}{self._SUFFIX}").exists():
+    def _stem(self, name):
+        stem = name.strip()
+        if stem.endswith(self._SUFFIX):
+            stem = stem[: -len(self._SUFFIX)]
+        if not stem or "/" in stem or "\\" in stem or stem in (".", ".."):
+            raise UserError(f"invalid entry name: {name!r}")
+        return stem
+
+    def _unique_name(self, directory, stem):
+        stem = self._stem(stem)
+        candidate = f"{stem}{self._SUFFIX}"
+        n = 1
+        while (directory / candidate).exists():
+            candidate = f"{stem}-{n}{self._SUFFIX}"
             n += 1
-        return f"{n}{self._SUFFIX}"
+        return candidate
 
     @staticmethod
     def _check_index(entries, index):
@@ -229,30 +294,32 @@ class Store:
     def entries(self, scope, event, tool=None):
         return self._load(scope, event, tool)
 
-    def add_entry(self, scope, text, event, tool=None, name=None, force=False):
+    def add_entry(self, scope, text, event, tool=None, name="default"):
         text = text.strip()
         if not text:
             raise UserError("entry text must not be empty")
         directory = self._dir(scope, event, tool)
         directory.mkdir(parents=True, exist_ok=True)
-        if name is None:
-            target = directory / self._auto_name(directory)
-        else:
-            target = self._named(directory, name)
-            if target.exists() and not force:
-                raise UserError(
-                    f"entry {target.stem!r} already exists; pass --force to overwrite"
-                )
+        target = directory / f"{self._stem(name)}{self._SUFFIX}"
+        if target.exists():
+            prev = target.read_text().rstrip("\n")
+            text = f"{prev}\n{text}" if prev else text
         target.write_text(text + "\n")
 
-    def _named(self, directory, name):
-        stem = name.strip()
-        if stem.endswith(self._SUFFIX):
-            stem = stem[: -len(self._SUFFIX)]
-        target = directory / f"{stem}{self._SUFFIX}"
-        if not stem or target.parent.resolve() != directory.resolve():
-            raise UserError(f"invalid entry name: {name!r}")
-        return target
+    def entry_path(self, scope, name, event, tool=None):
+        """Filesystem path of a named entry file, creating its parent dir."""
+        directory = self._dir(scope, event, tool)
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory / f"{self._stem(name)}{self._SUFFIX}"
+
+    def add_import_entry(self, scope, text, stem, event, tool=None):
+        text = text.strip()
+        if not text:
+            raise UserError("entry text must not be empty")
+        directory = self._dir(scope, event, tool)
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / self._unique_name(directory, stem)
+        target.write_text(text + "\n")
 
     def replace_entry(self, scope, index, text, event, tool=None):
         text = text.strip()
@@ -279,7 +346,10 @@ class Store:
                 for s in self.SCOPES
                 if (text := self.joined(event, tool, s))
             )
-        return "\n\n".join(self._load(scope, event, tool))
+        entries = self._load(scope, event, tool)
+        if event != ALL_MODE:
+            entries = self._load(scope, ALL_MODE) + entries
+        return "\n\n".join(entries)
 
     def walk(self):
         """Yield (scope, key, entries) for every non-empty verifier, broad->narrow."""
@@ -686,7 +756,8 @@ class VerifierMcpServer(McpStdioServer):
             "ExitPlanMode until the agent self-certifies via the confirm tool. ask = a gate "
             "that blocks AskUserQuestion the same way, forcing a real attempt before "
             "interrupting the user. verify = NOT a hook; it never fires at runtime. Its "
-            "entries are stored solely to be fanned out by generate-workflow."
+            "entries are stored solely to be fanned out by generate-workflow. all = applies "
+            "to every mode; stored once and merged into each event's read at runtime."
         ),
     }
     INDEX_PROP = {
@@ -990,24 +1061,36 @@ def link_cli():
     """Symlink this script into ~/.local/bin when that dir exists.
 
     Run from hook and mcp modes so it self-installs on first invocation. Does nothing
-    if the dir is absent or anything already occupies the path — never clobbers.
+    if the dir is absent, or if HANDOFF_VERIFIER_NO_SYMLINK=1. An existing symlink is
+    refreshed to point at this script; a real (non-symlink) file is never clobbered.
     """
+    if os.environ.get("HANDOFF_VERIFIER_NO_SYMLINK") == "1":
+        return
     target = pathlib.Path.home() / ".local" / "bin" / "handoff-verifier"
-    if target.parent.is_dir() and not (target.exists() or target.is_symlink()):
+    if not target.parent.is_dir():
+        return
+    if target.is_symlink():
+        # Refresh a stale symlink (e.g. moved plugin path); leave real files alone.
         try:
-            target.symlink_to(pathlib.Path(__file__))
+            target.unlink()
         except OSError:
-            pass
+            return
+    elif target.exists():
+        return
+    try:
+        target.symlink_to(pathlib.Path(__file__))
+    except OSError:
+        pass
 
 
-def cmd_hook(args):
+async def cmd_hook(args):
     link_cli()
     HookRunner(Store(resolve_session(), resolve_project())).run(
         json.load(sys.stdin)
     )
 
 
-def cmd_mcp(args):
+async def cmd_mcp(args):
     link_cli()
     VerifierMcpServer(Store(resolve_session(), resolve_project())).serve()
 
@@ -1016,40 +1099,95 @@ async def cmd_edit(args):
     editor = os.environ.get("EDITOR")
     if not editor:
         raise UserError("EDITOR is not set")
-    session = await pick_session(args.session, args.scope == Store.SESSION)
+    scope = resolve_target_scope(args)
+    session = await pick_session(args.session, scope == Store.SESSION)
     prepare_env()
-    directory = Store(
-        resolve_session(session), resolve_project(args.project)
-    ).dirs[args.scope]
-    process = await asyncio.create_subprocess_exec(editor, str(directory))
+    store = Store(resolve_session(session), resolve_project(args.project))
+    name = args.name or "default"
+    paths = [
+        store.entry_path(scope, name, **mode_key(mode))
+        for mode in add_target_modes(args)
+    ]
+    process = await asyncio.create_subprocess_exec(
+        editor, *(str(p) for p in paths)
+    )
     await process.wait()
     if process.returncode:
         raise UserError(f"editor exited with status {process.returncode}")
 
 
+async def edit_new_entry():
+    editor = os.environ.get("EDITOR")
+    if not editor:
+        raise UserError("EDITOR is not set")
+    with tempfile.NamedTemporaryFile(
+        mode="w+", suffix=".md", delete=False
+    ) as handle:
+        path = pathlib.Path(handle.name)
+    try:
+        process = await asyncio.create_subprocess_exec(editor, str(path))
+        await process.wait()
+        if process.returncode:
+            raise UserError(f"editor exited with status {process.returncode}")
+        text = path.read_text()
+    finally:
+        path.unlink(missing_ok=True)
+    if not text.strip():
+        raise UserError("aborted: no text entered")
+    return text
+
+
 async def cmd_add(args):
-    if args.force and not args.name:
-        raise UserError("--force only applies with --name")
-    session = await pick_session(args.session, args.scope == Store.SESSION)
-    text = args.text
-    if text is None:
-        if sys.stdin.isatty():
-            raise UserError(
-                "text is required (pass an argument or pipe via stdin)"
-            )
-        text = sys.stdin.read()
+    scope = resolve_target_scope(args)
+    session = await pick_session(args.session, scope == Store.SESSION)
     prepare_env()
     store = Store(resolve_session(session), resolve_project(args.project))
-    for mode in resolve_modes(args):
-        store.add_entry(
-            args.scope,
-            text,
-            name=args.name,
-            force=args.force,
-            **mode_key(mode),
+    if args.import_dir is not None:
+        await import_entries(store, scope, args)
+        return
+    name = args.name or "default"
+    texts = args.text
+    if not texts:
+        texts = [
+            await edit_new_entry() if sys.stdin.isatty() else sys.stdin.read()
+        ]
+    for mode in add_target_modes(args):
+        key = mode_key(mode)
+        if args.replace:
+            store.clear_context(scope, **key)
+        for text in texts:
+            store.add_entry(scope, text, name=name, **key)
+        verb = "replaced with" if args.replace else "added"
+        count = len(texts)
+        print(
+            f"{verb} {count} {mode} entr{'y' if count == 1 else 'ies'} "
+            f"to {name!r} at {scope} scope"
         )
-        named = f" {args.name!r}" if args.name else ""
-        print(f"added {mode} entry{named} at {args.scope} scope")
+
+
+async def import_entries(store, scope, args):
+    if args.text:
+        raise UserError("--import cannot be combined with entry text")
+    if args.name is not None:
+        raise UserError("--import cannot be combined with --name")
+    directory = args.import_dir
+    if not directory.is_dir():
+        raise UserError(f"not a directory: {directory}")
+    files = sorted(directory.rglob("*.md"))
+    if not files:
+        raise UserError(f"no .md files under {directory}")
+    for mode in add_target_modes(args):
+        key = mode_key(mode)
+        if args.replace:
+            store.clear_context(scope, **key)
+        count = 0
+        for path in files:
+            if not path.read_text().strip():
+                print(f"skipped empty {path}")
+                continue
+            store.add_import_entry(scope, path.read_text(), path.stem, **key)
+            count += 1
+        print(f"imported {count} {mode} entries at {scope} scope")
 
 
 async def cmd_ls(args):
@@ -1064,31 +1202,41 @@ async def cmd_ls(args):
     )
 
 
+async def cmd_show(args):
+    session = await pick_session(args.session, required=False)
+    prepare_env()
+    store = Store(resolve_session(session), resolve_project(args.project))
+    body = store.joined(**mode_key(args.mode))
+    if body:
+        print(body)
+
+
 async def cmd_path(args):
-    session = await pick_session(args.session, args.scope == Store.SESSION)
+    scope = resolve_target_scope(args)
+    session = await pick_session(args.session, scope == Store.SESSION)
     prepare_env()
     print(
         Store(resolve_session(session), resolve_project(args.project)).dirs[
-            args.scope
+            scope
         ]
     )
 
 
 async def cmd_clear(args):
-    session = await pick_session(args.session, args.scope == Store.SESSION)
+    scope = resolve_target_scope(args)
+    session = await pick_session(args.session, scope == Store.SESSION)
     prepare_env()
     store = Store(resolve_session(session), resolve_project(args.project))
     for mode in resolve_modes(args):
         key = mode_key(mode)
-        if not store.entries(args.scope, **key):
-            print(f"no {mode} verifier at {args.scope} scope")
+        if not store.entries(scope, **key):
             continue
         if args.index is not None:
-            store.remove_entry(args.scope, args.index, **key)
-            print(f"removed {mode} entry {args.index} at {args.scope} scope")
+            store.remove_entry(scope, args.index, **key)
+            print(f"removed {mode} entry {args.index} at {scope} scope")
         else:
-            store.clear_context(args.scope, **key)
-            print(f"cleared {mode} verifier at {args.scope} scope")
+            store.clear_context(scope, **key)
+            print(f"cleared {mode} verifier at {scope} scope")
 
 
 async def cmd_generate_workflow(args):
@@ -1108,43 +1256,82 @@ async def cmd_generate_workflow(args):
 
 
 def add_mode_argument(subparser):
-    group = subparser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
+    subparser.add_argument(
         "-m",
         "--mode",
         action="append",
         dest="mode",
         choices=list(MODES),
         metavar="MODE",
-        help="verifier mode to act on (repeatable)",
-    )
-    group.add_argument(
-        "-a",
-        "--all",
-        action="store_true",
-        help="act on every mode",
+        help="verifier mode to act on (repeatable); 'all' = the cross-cutting "
+        "bucket merged into every mode at runtime. add defaults to 'all'; "
+        "clear defaults to every mode",
     )
 
 
 def resolve_modes(args):
-    return list(MODES) if args.all else list(dict.fromkeys(args.mode))
+    if not args.mode:
+        return list(MODES)
+    return list(dict.fromkeys(args.mode))
 
 
-def add_scope_argument(subparser):
-    subparser.add_argument(
-        "-s",
-        "--scope",
-        choices=list(Store.SCOPES),
-        required=True,
-        help="verifier scope to act on",
+def add_target_modes(args):
+    """add/import target: the listed modes, or just the all-folder when none given."""
+    if not args.mode:
+        return [ALL_MODE]
+    return list(dict.fromkeys(args.mode))
+
+
+def add_target_argument(subparser):
+    """Scope selector for scope-specific commands.
+
+    The three scopes are mutually exclusive; the flag chosen IS the scope.
+    Defaults to the project scope when none is given.
+    """
+    section = subparser.add_argument_group(
+        "scope", "which verifier scope to act on (default: project)"
     )
+    group = section.add_mutually_exclusive_group()
+    group.add_argument(
+        "-u",
+        "--user",
+        action="store_true",
+        help="target the global (user) scope",
+    )
+    group.add_argument(
+        "-p",
+        "--project",
+        nargs="?",
+        const="",
+        metavar="DIR",
+        help="target the project scope; optional DIR overrides the current directory",
+    )
+    group.add_argument(
+        "-s",
+        "--session",
+        nargs="?",
+        const="",
+        metavar="ID",
+        help="target the session scope; optional ID (or unique prefix) selects the "
+        "session, else it is auto-resolved from this directory",
+    )
+
+
+def resolve_target_scope(args):
+    if args.user:
+        return Store.GLOBAL
+    if args.session is not None:
+        return Store.SESSION
+    return Store.PROJECT
 
 
 def add_session_argument(subparser):
     subparser.add_argument(
+        "-s",
         "--session",
         metavar="ID",
-        help="session id; auto-resolved from this directory if omitted",
+        help="session id, or a unique prefix of an active session's id; "
+        "empty or omitted auto-resolves from this directory",
     )
 
 
@@ -1162,67 +1349,106 @@ def main():
     subparsers = parser.add_subparsers(
         dest="command",
         required=True,
-        metavar="{hook,mcp,ls,path,edit,add,clear,generate-workflow}",
+        metavar="{hook,mcp,ls,show,path,edit,add,clear,generate-workflow}",
     )
-    subparsers.add_parser(
-        "hook", help="run as a Claude Code hook (invoked by hooks.json)"
+    hook = subparsers.add_parser(
+        "hook",
+        aliases=["h"],
+        help="run as a Claude Code hook (invoked by hooks.json)",
     )
-    subparsers.add_parser("mcp", help="run as an MCP stdio server")
+    hook.set_defaults(func=cmd_hook)
+    mcp = subparsers.add_parser(
+        "mcp", aliases=["m"], help="run as an MCP stdio server"
+    )
+    mcp.set_defaults(func=cmd_mcp)
     show = subparsers.add_parser(
-        "ls", help="list active verifiers across scopes"
+        "ls", aliases=["l"], help="list active verifiers across scopes"
     )
+    show.set_defaults(func=cmd_ls)
     add_session_argument(show)
     add_project_argument(show)
+    show_cmd = subparsers.add_parser(
+        "show",
+        aliases=["s"],
+        help="print the rendered verifier text a mode's hook would inject",
+    )
+    show_cmd.set_defaults(func=cmd_show)
+    show_cmd.add_argument(
+        "mode",
+        choices=list(MODES),
+        metavar="MODE",
+        help="verifier mode to render",
+    )
+    add_session_argument(show_cmd)
+    add_project_argument(show_cmd)
     path = subparsers.add_parser(
-        "path", help="print the filesystem path of a scope's verifiers"
+        "path",
+        aliases=["p"],
+        help="print the filesystem path of a scope's verifiers",
     )
-    add_scope_argument(path)
-    add_session_argument(path)
-    add_project_argument(path)
+    path.set_defaults(func=cmd_path)
+    add_target_argument(path)
     edit = subparsers.add_parser(
-        "edit", help="open a scope's verifiers in $EDITOR"
+        "edit", aliases=["e"], help="open a scope's verifiers in $EDITOR"
     )
-    add_scope_argument(edit)
-    add_session_argument(edit)
-    add_project_argument(edit)
-    add = subparsers.add_parser(
-        "add", help="append an entry to one scope's verifier"
-    )
-    add_scope_argument(add)
-    add_mode_argument(add)
-    add.add_argument(
+    edit.set_defaults(func=cmd_edit)
+    add_target_argument(edit)
+    add_mode_argument(edit)
+    edit.add_argument(
         "-n",
         "--name",
         metavar="NAME",
-        help="filename stem for the entry; defaults to an auto-incremented index",
+        help="entry file to open (default: default)",
     )
-    add.add_argument(
-        "-f",
-        "--force",
+    add = subparsers.add_parser(
+        "add", aliases=["a"], help="append an entry to one scope's verifier"
+    )
+    add.set_defaults(func=cmd_add)
+    add_target_argument(add)
+    add_mode_argument(add)
+    entry = add.add_argument_group("entry", "the content to store and how")
+    entry.add_argument(
+        "-n",
+        "--name",
+        metavar="NAME",
+        help="entry file to append to (default: default)",
+    )
+    entry.add_argument(
+        "-r",
+        "--replace",
         action="store_true",
-        help="overwrite an existing entry with the same --name",
+        help="remove existing entries for the target mode(s) first, leaving only this input",
     )
-    add.add_argument(
-        "text", nargs="?", help="entry text; read from stdin if omitted"
+    entry.add_argument(
+        "-i",
+        "--import",
+        dest="import_dir",
+        type=pathlib.Path,
+        metavar="DIR",
+        help="recursively add every .md file under DIR as its own entry",
     )
-    add_session_argument(add)
-    add_project_argument(add)
+    entry.add_argument(
+        "text",
+        nargs="*",
+        help="entry text, one entry per argument; read from stdin if omitted",
+    )
     clear = subparsers.add_parser(
-        "clear", help="remove one scope's verifier for a mode"
+        "clear", aliases=["c"], help="remove one scope's verifier for a mode"
     )
-    add_scope_argument(clear)
+    clear.set_defaults(func=cmd_clear)
+    add_target_argument(clear)
     add_mode_argument(clear)
     clear.add_argument(
         "--index",
         type=int,
         help="entry index to remove; omit to clear the whole mode",
     )
-    add_session_argument(clear)
-    add_project_argument(clear)
     gen = subparsers.add_parser(
         "generate-workflow",
+        aliases=["g"],
         help="emit a Workflow script fanning one agent out per verifier",
     )
+    gen.set_defaults(func=cmd_generate_workflow)
     gen.add_argument(
         "-l",
         "--loop",
@@ -1254,23 +1480,7 @@ def main():
     add_project_argument(gen)
 
     args = parser.parse_args()
-    match args.command:
-        case "hook":
-            cmd_hook(args)
-        case "mcp":
-            cmd_mcp(args)
-        case "ls":
-            asyncio.run(cmd_ls(args))
-        case "path":
-            asyncio.run(cmd_path(args))
-        case "edit":
-            asyncio.run(cmd_edit(args))
-        case "add":
-            asyncio.run(cmd_add(args))
-        case "clear":
-            asyncio.run(cmd_clear(args))
-        case "generate-workflow":
-            asyncio.run(cmd_generate_workflow(args))
+    asyncio.run(args.func(args))
 
 
 if __name__ == "__main__":

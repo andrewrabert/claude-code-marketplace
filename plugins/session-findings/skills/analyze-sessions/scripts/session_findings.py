@@ -53,11 +53,25 @@ SNIPPET = 220
 # agent and the sweep workflow) run `schema` to embed this, so they can never
 # drift from each other or from the docs.
 BUG_CATEGORIES = [
-    "crash", "logic", "type", "test-failure", "build-dep", "config-tooling",
-    "docs-accuracy", "render", "concurrency", "perf", "integration",
+    "crash",
+    "logic",
+    "type",
+    "test-failure",
+    "build-dep",
+    "config-tooling",
+    "docs-accuracy",
+    "render",
+    "concurrency",
+    "perf",
+    "integration",
 ]
 SEVERITIES = ["low", "med", "high"]
-PROCESS_TYPES = ["correction-loop", "dead-end-revert", "re-explaining", "stall"]
+PROCESS_TYPES = [
+    "correction-loop",
+    "dead-end-revert",
+    "re-explaining",
+    "stall",
+]
 LEARNING_KINDS = ["project-fact", "gotcha", "prevention-rule", "process-rule"]
 SUGGESTED_SCOPES = ["global", "project", "session"]
 SUGGESTED_MODES = ["submit", "stop", "plan", "ask", "verify"]
