@@ -62,11 +62,7 @@ STEPS
 1. RESUME-CHECK: ReadNote "Claude/Session Findings/${w.session_id}/findings.json".
    If it already exists, do nothing else and return {session_id:"${w.session_id}", skipped:true, n_bugs:0, n_process:0, n_learnings:0}.
 2. Read the digest JSON at digest_path (the Read tool). It is metadata + an ordered events[] stream: prompt (with is_correction), tool, note, and the split failure kinds error / tool_error / rejection.
-3. Classify into three arrays, using ONLY evidence present in the digest — never invent filenames, commits, or facts:
-   - bugs[]: {category(crash|logic|type|test-failure|build-dep|config-tooling|docs-accuracy|render|concurrency|perf|integration), one_line, root_cause, how_found, how_fixed, severity(low|med|high)}
-   - process_problems[]: {type(correction-loop|dead-end-revert|re-explaining|stall), one_line, cost_turns}
-   - learnings[]: {text, kind(project-fact|gotcha|prevention-rule|process-rule), evidence, suggested_scope(global|project|session), suggested_mode(submit|stop|plan|ask|verify), verifier_text}
-   Reflect rejection events in process_problems/learnings. Do NOT treat tool_error as a code bug. Capture everything real; use [] when genuinely none. Enum fields MUST be from the lists above.
+3. Run via Bash: python3 ${SKILL} schema — it prints the canonical classification contract (the three arrays' field shapes and the exact allowed enum values; single source of truth, do not restate from memory). Classify into those three arrays (bugs[], process_problems[], learnings[]) using ONLY evidence present in the digest — never invent filenames, commits, or facts. Reflect rejection events in process_problems/learnings. Do NOT treat tool_error as a code bug. Capture everything real; use [] when genuinely none. Every enum field MUST be one of the values the schema lists.
 4. Assemble the findings.json object: {schema_version:1, session_id, project, cwd, title, date, branch, duration_min, turn_count, last_message_at, processed_at, index, bugs, process_problems, learnings} — copy every metadata field verbatim from SESSION above (processed_at is already provided; do NOT call date).
 5. WriteNote "Claude/Session Findings/${w.session_id}/findings.json" with that JSON pretty-printed (2-space indent).
 6. Write the same JSON to ${TMP}/${w.session_id}.json (Write tool), then run via Bash: python3 ${SKILL} render ${TMP}/${w.session_id}.json — capture stdout as the markdown, and WriteNote "Claude/Session Findings/${w.session_id}/findings.md" with it.

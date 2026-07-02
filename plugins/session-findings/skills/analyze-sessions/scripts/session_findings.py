@@ -8,6 +8,12 @@ Deterministic (no-model) transforms over Claude Code session transcripts:
   manifest <project-dir> [<dir>...]   enumerate sessions -> classification manifest
   worklist <project-dir> [<dir>...]   one-shot: digest each session to --digest-dir
                                       and emit the fan-out sweep's work-list
+  schema                              print the canonical classification contract
+                                      (array shapes + allowed enum values)
+
+This script owns the classification contract (`schema`): the runtime prompts —
+the classify-session agent and the sweep workflow — fetch it from here rather
+than restating the enums, so there is one source of truth.
 
 The model step (classifying a digest into bugs/process_problems/learnings) and
 all note writes (via the notes MCP) live outside this script — see SKILL.md.
@@ -41,6 +47,36 @@ ERROR_RE = re.compile(
     r"\berror\[E\d|panic:|Segmentation fault|FAILED\b",
 )
 SNIPPET = 220
+
+# Canonical classification contract — the single source of truth for the enum
+# values the model must pick from. Both runtime prompts (the classify-session
+# agent and the sweep workflow) run `schema` to embed this, so they can never
+# drift from each other or from the docs.
+BUG_CATEGORIES = [
+    "crash", "logic", "type", "test-failure", "build-dep", "config-tooling",
+    "docs-accuracy", "render", "concurrency", "perf", "integration",
+]
+SEVERITIES = ["low", "med", "high"]
+PROCESS_TYPES = ["correction-loop", "dead-end-revert", "re-explaining", "stall"]
+LEARNING_KINDS = ["project-fact", "gotcha", "prevention-rule", "process-rule"]
+SUGGESTED_SCOPES = ["global", "project", "session"]
+SUGGESTED_MODES = ["submit", "stop", "plan", "ask", "verify"]
+
+
+def schema_text():
+    """Render the classification contract as a prompt-ready reference block."""
+    lines = [
+        "bugs[]:             { category, one_line, root_cause, how_found, how_fixed, severity }",
+        f"  category:         {' | '.join(BUG_CATEGORIES)}",
+        f"  severity:         {' | '.join(SEVERITIES)}",
+        "process_problems[]: { type, one_line, cost_turns }",
+        f"  type:             {' | '.join(PROCESS_TYPES)}",
+        "learnings[]:        { text, kind, evidence, suggested_scope, suggested_mode, verifier_text }",
+        f"  kind:             {' | '.join(LEARNING_KINDS)}",
+        f"  suggested_scope:  {' | '.join(SUGGESTED_SCOPES)}",
+        f"  suggested_mode:   {' | '.join(SUGGESTED_MODES)}",
+    ]
+    return "\n".join(lines)
 
 
 def is_correction(text):
@@ -366,6 +402,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("digest").add_argument("path")
     sub.add_parser("render").add_argument("path")
+    sub.add_parser("schema")
     m = sub.add_parser("manifest")
     m.add_argument("dirs", nargs="+")
     m.add_argument("--ids", help="file of session ids/prefixes to keep")
@@ -379,6 +416,8 @@ def main():
 
     if args.cmd == "digest":
         print(json.dumps(digest(args.path), indent=2))
+    elif args.cmd == "schema":
+        print(schema_text())
     elif args.cmd == "render":
         print(render(json.loads(Path(args.path).read_text())))
     elif args.cmd == "manifest":

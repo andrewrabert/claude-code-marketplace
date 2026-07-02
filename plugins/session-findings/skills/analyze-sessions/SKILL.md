@@ -32,6 +32,7 @@ can appear under several dirs (path variants, subdir cwds).
 ```sh
 session_findings.py digest   <session.jsonl>             # transcript -> digest JSON
 session_findings.py render   <findings.json>             # findings record -> findings.md
+session_findings.py schema                               # canonical classification contract
 session_findings.py manifest <dir>... [--ids <file>]     # enumerate sessions -> manifest JSON
 session_findings.py worklist <dir>... --digest-dir <dir> [--ids <file>]
                                                          # digest each in-scope session +
@@ -75,6 +76,11 @@ counters: `n_errors`, `n_tool_errors`, `n_corrections`, `n_rejections`,
 
 The model classifies a digest into three arrays. Capture **everything** (incl.
 session-specific or trivial items); use `[]` if genuinely none.
+
+`session_findings.py schema` is the **single source of truth** for the array
+shapes and allowed enum values — the runtime prompts (the classify-session agent
+and the sweep) fetch it rather than restate the enums. The JSON below is an
+illustrative snapshot; if it ever disagrees with `schema`, the command wins.
 
 ```json
 {
@@ -185,13 +191,14 @@ per session — writing self-contained folders.
   `n_errors:1`, identical to a trivial one.
 - Self-contained folders + the resume-check make re-runs idempotent: safe to
   re-launch a sweep; done sessions are skipped.
-- **Fill in small targeted batches, don't re-burst the whole corpus.** At a few
-  hundred concurrent agents the API rate-limits hard (transient server-side),
-  and re-launching all N again — even mostly resume-check skips, since each skip
-  still costs one call — compounds it. After a throttled run: recompute the
-  MISSING set (one cheap agent diffing `SearchNotes` vs the manifest), build a
-  missing-only manifest, and sweep just those. Repeat on the residual; it
-  converges in a few small passes.
+- **Fill in small targeted batches, don't re-burst the whole corpus.** The
+  workflow caps in-flight agents (≈`min(16, cpu-cores − 2)`), so a single sweep
+  won't flood the API — the hazard is *cumulative* load across re-launches:
+  re-running all N compounds it because every resume-check skip still costs one
+  agent call, and a large residual can rate-limit hard (transient server-side).
+  After a throttled run: recompute the MISSING set (one cheap agent diffing
+  `SearchNotes` vs the manifest), build a missing-only manifest, and sweep just
+  those. Repeat on the residual; it converges in a few small passes.
 
 ## Verification
 

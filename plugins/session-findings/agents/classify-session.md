@@ -31,8 +31,8 @@ may read exactly:
 1. the digest file you produce in step 2, and
 2. this session's own notes under `Claude/Session Findings/<session_id>/`.
 
-You may **execute** `$SCRIPT` (`digest`, `render`) and the resolver commands
-(`find`, `basename`, `date`) — nothing else via `Bash`.
+You may **execute** `$SCRIPT` (`digest`, `render`, `schema`) and the resolver
+commands (`find`, `basename`, `date`) — nothing else via `Bash`.
 
 You must NEVER open, `cat`, `ls`, `grep`, or otherwise inspect anything else: not
 the working tree or any source, not this plugin's scripts, not other sessions'
@@ -63,26 +63,15 @@ take every metadata field FROM the digest; never re-derive from the file path.
 
 ## 4. Classify
 
-Read the digest (metadata + an ordered `events[]` stream: `prompt` with
-`is_correction`, `tool`, `note`, and the split failure kinds `error` /
-`tool_error` / `rejection`). Classify into three arrays using ONLY evidence in
-the digest — never invent filenames, commits, or facts. Capture everything real;
-use `[]` when genuinely none. Enum fields MUST match exactly:
-
-```
-bugs[]:             { category, one_line, root_cause, how_found, how_fixed, severity }
-  category:         crash | logic | type | test-failure | build-dep | config-tooling |
-                    docs-accuracy | render | concurrency | perf | integration
-  severity:         low | med | high
-
-process_problems[]: { type, one_line, cost_turns }
-  type:             correction-loop | dead-end-revert | re-explaining | stall
-
-learnings[]:        { text, kind, evidence, suggested_scope, suggested_mode, verifier_text }
-  kind:             project-fact | gotcha | prevention-rule | process-rule
-  suggested_scope:  global | project | session
-  suggested_mode:   submit | stop | plan | ask | verify
-```
+Run `$SCRIPT schema` — it prints the canonical classification contract: the
+three arrays' field shapes and the exact allowed enum values (the single source
+of truth; do not restate them from memory). Then read the digest (metadata + an
+ordered `events[]` stream: `prompt` with `is_correction`, `tool`, `note`, and
+the split failure kinds `error` / `tool_error` / `rejection`) and classify into
+those three arrays (`bugs[]`, `process_problems[]`, `learnings[]`) using ONLY
+evidence in the digest — never invent filenames, commits, or facts. Capture
+everything real; use `[]` when genuinely none. Every enum field MUST be one of
+the values the schema lists.
 
 Reflect `rejection` events in `process_problems`/`learnings`. Do NOT treat
 `tool_error` as a code bug. An event's label is a *claim*: if its evidence
