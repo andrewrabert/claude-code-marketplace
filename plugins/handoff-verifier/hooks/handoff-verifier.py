@@ -178,6 +178,25 @@ class UserError(Exception):
     pass
 
 
+def all_files(*paths, suffix=None):
+    stack = []
+    files = set()
+    for path in paths:
+        if path.is_file():
+            files.add(path)
+        elif path.is_dir():
+            stack.append(path)
+    while stack:
+        for path in stack.pop().iterdir():
+            if path.is_dir():
+                stack.append(path)
+            else:
+                files.add(path)
+    if suffix is not None:
+        files = {path for path in files if path.suffix.lower() == suffix}
+    return sorted(files)
+
+
 class Store:
     """Disk scope dirs; get/set/list a (scope, event, tool)."""
 
@@ -1182,12 +1201,12 @@ async def import_entries(store, scope, args):
         raise UserError("--import cannot be combined with entry text")
     if args.name is not None:
         raise UserError("--import cannot be combined with --name")
-    directory = args.import_dir
-    if not directory.is_dir():
-        raise UserError(f"not a directory: {directory}")
-    files = sorted(directory.rglob("*.md"))
+    target = args.import_dir
+    if not target.exists():
+        raise UserError(f"no such file or directory: {target}")
+    files = all_files(target, suffix=".md")
     if not files:
-        raise UserError(f"no .md files under {directory}")
+        raise UserError(f"no .md files under {target}")
     for mode in add_target_modes(args):
         key = mode_key(mode)
         if args.replace:
@@ -1436,8 +1455,8 @@ def main():
         "--import",
         dest="import_dir",
         type=pathlib.Path,
-        metavar="DIR",
-        help="recursively add every .md file under DIR as its own entry",
+        metavar="PATH",
+        help="add a .md file as an entry, or recursively add every .md file under a directory",
     )
     entry.add_argument(
         "text",
