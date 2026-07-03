@@ -10,6 +10,7 @@ import pathlib
 import secrets
 import sys
 import tempfile
+import uuid
 
 # Friendly presets the MCP tools expose, each mapped to the (event, tool) tuple the generic
 # Store and hook actually key on. Only the MCP layer consults this; the hook matches blindly.
@@ -195,7 +196,9 @@ class Store:
             self.PROJECT: context / "project" / project,
             self.SESSION: context / "session" / session,
         }
-        self.state_dir = plugin_data / "state" / "session" / session
+        self.session = session
+        self._state_root = plugin_data / "state" / "session"
+        self.state_dir = self._state_root / session
         for directory in (*self.dirs.values(), self.state_dir):
             directory.mkdir(parents=True, exist_ok=True)
         for scope in self.dirs:
@@ -234,17 +237,25 @@ class Store:
         try:
             return json.loads(path.read_text())["token"]
         except FileNotFoundError:
-            token = secrets.token_hex(8)
+            # The session-hex prefix lets confirm locate this file without knowing
+            # its own (possibly different) session; the hex part keeps it secret.
+            token = f"{uuid.UUID(self.session).hex}:{secrets.token_hex(8)}"
             path.write_text(json.dumps({"token": token, "verified": False}))
             return token
 
     def confirm_token(self, token, event, tool=None):
-        path = self._token_path(event, tool)
+        try:
+            session = str(uuid.UUID(token.partition(":")[0]))
+        except ValueError:
+            return False
+        path = (
+            self._state_root / session / f"{self._encode(event, tool)}.token"
+        )
         try:
             data = json.loads(path.read_text())
         except FileNotFoundError:
             return False
-        if not token or data["token"] != token:
+        if data["token"] != token:
             return False
         path.write_text(json.dumps({"token": token, "verified": True}))
         return True
@@ -605,7 +616,8 @@ class HookRunner:
     def proceed(tool, token):
         return (
             "TO PROCEED: only after you have audited every constraint above and judge ZERO "
-            "violations remain, call the `mcp__handoff-verifier__confirm` tool with token "
+            "violations remain, call the "
+            "`mcp__plugin_handoff-verifier_handoff-verifier__confirm` tool with token "
             f'"{token}" to confirm this {tool} gate. That confirmation unlocks exactly one '
             f"{tool} call — retry {tool} immediately after. Do not confirm while any "
             "constraint is still violated."
