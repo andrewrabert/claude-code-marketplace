@@ -64,11 +64,7 @@ class git:
 
     @staticmethod
     async def staged_paths():
-        # --diff-filter=d excludes deletions: a deleted plugin has no
-        # manifest left to bump, so it must not enter the work-list.
-        out = await git._run(
-            "diff", "--cached", "--name-only", "-z", "--diff-filter=d"
-        )
+        out = await git._run("diff", "--cached", "--name-only", "-z")
         return [pathlib.Path(name) for name in out.split("\0") if name]
 
     @staticmethod
@@ -122,6 +118,15 @@ async def bump_plugin(name):
 
 async def cmd_bump(args):
     plugins = staged_plugins(await git.staged_paths())
+    # A wholly-deleted plugin has no manifest left to bump; skip it. A skill
+    # deleted from a surviving plugin still bumps that plugin's version.
+    plugins = [
+        name
+        for name in plugins
+        if (
+            REPO / "plugins" / name / ".claude-plugin" / "plugin.json"
+        ).exists()
+    ]
     await asyncio.gather(*(bump_plugin(name) for name in plugins))
 
 
