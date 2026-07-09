@@ -661,6 +661,11 @@ class McpStdioServer:
         """Override: declare tools by calling register_tool() once per tool."""
         raise NotImplementedError
 
+    @staticmethod
+    def enabled():
+        """Tools disabled by default; opt in with HANDOFF_VERIFIER_ENABLED=1."""
+        return os.environ.get("HANDOFF_VERIFIER_ENABLED") == "1"
+
     def register_tool(self, name, description, input_schema, handler):
         """Register one MCP tool. handler(arguments) -> str. MCP envelope shape lives here."""
         self._tools[name] = {
@@ -709,11 +714,20 @@ class McpStdioServer:
                 }
             case "tools/list":
                 response["result"] = {
-                    "tools": [t["descriptor"] for t in self._tools.values()]
+                    "tools": (
+                        [t["descriptor"] for t in self._tools.values()]
+                        if self.enabled()
+                        else []
+                    )
                 }
             case "tools/call":
                 params = message.get("params") or {}
                 try:
+                    if not self.enabled():
+                        raise self.TOOL_ERROR(
+                            "handoff-verifier tools are disabled; set "
+                            "HANDOFF_VERIFIER_ENABLED=1 to enable"
+                        )
                     text = self.dispatch(
                         params.get("name"), params.get("arguments")
                     )
