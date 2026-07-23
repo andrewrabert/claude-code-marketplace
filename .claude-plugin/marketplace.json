@@ -26,6 +26,11 @@
       "name": "session-findings",
       "source": "./plugins/session-findings",
       "description": "Mine Claude Code session transcripts into self-contained per-session findings notes (bugs, development friction, reusable learnings) via a deterministic digest pass plus model classification; includes the digest/render scripts and a resumable sweep harness that writes findings.json and findings.md keyed by deterministic session id"
+    },
+    {
+      "name": "noted",
+      "source": "./plugins/noted",
+      "description": "noted - https://github.com/andrewrabert/noted"
     }
   ]
 }

@@ -8,6 +8,7 @@ Personal Claude Code plugins and skills.
 |--------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `andrewrabert-dev` | Development conventions for Python, shell scripting, terminal UIs, and code comments, plus a design-architect agent that reviews and advises on code-organization quality: separation of concerns, leaky abstractions, RAII/lifecycle, interface design, change resilience, dependency strategy, delivery sequencing                                                           |
 | `handoff-verifier` | Self-verification hooks managed by MCP tools: a Stop reminder that forces one more reasoning turn before a turn ends, plus ExitPlanMode and AskUserQuestion gates that block the tool until you self-certify the constraints are met via a token confirm. Each check is set per global, project, or session scope, and the hook concatenates the active scopes broad-to-narrow |
+| `noted`            | noted - https://github.com/andrewrabert/noted                                                                                                                                                                                                                                                                                                                                  |
 | `session-findings` | Mine Claude Code session transcripts into self-contained per-session findings notes (bugs, development friction, reusable learnings) via a deterministic digest pass plus model classification; includes the digest/render scripts and a resumable sweep harness that writes findings.json and findings.md keyed by deterministic session id                                   |
 | `terse`            | Mirror of the global Stop-hook verifier: answer only what was asked, lead with the direct answer, drop all filler                                                                                                                                                                                                                                                              |
 
@@ -24,6 +25,13 @@ Personal Claude Code plugins and skills.
 ### handoff-verifier
 
 _No skills._
+
+### noted
+
+| Skill   | Description                                                                                                                                                                                                              |
+|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `log`   | Use when explicitly asked to journal or log the conversation (e.g. /log) — capture an immutable, timestamped entry via the noted MCP LogNote tool.                                                                       |
+| `plan`  | Use when explicitly asked to plan a task into notes (e.g. /plan) — work a task through read-only explore → design → review, then persist the plan as a noted note under dev/plans/ and open a noted task referencing it. |
 
 ### session-findings
 
