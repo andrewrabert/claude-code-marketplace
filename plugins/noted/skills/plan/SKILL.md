@@ -70,7 +70,7 @@ asked, and resolve any remaining open questions with the user.
 
 1. Write the plan note (or overwrite the prior plan found in step 1):
    `mcp__noted__WriteNote(path="dev/plans/<date>-<slug>.md", content=<plan>)`
-   - `<date>` — today, `YYYY-MM-DD`, from your harness's current-date context.
+   - `<date>` — today, `YYYYMMDD`, from your harness's current-date context.
    - `<slug>` — kebab-cased short task title.
    - Use `WriteNote`, not `LogNote` (which is immutable/timestamped) — a plan
      must stay editable. A plan is a note, not a `Tasks/` entry.
