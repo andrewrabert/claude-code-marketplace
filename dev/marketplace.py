@@ -11,6 +11,7 @@ import datetime
 import json
 import pathlib
 import re
+import sys
 
 import frontmatter
 import tabulate
@@ -293,9 +294,18 @@ def render(marketplace):
     )
 
 
-def cmd_readme(args):
-    (REPO / "README.md").write_text(render(load_marketplace()))
-    print(f"Wrote {REPO / 'README.md'}")
+def cmd_render_readme(args):
+    path = REPO / "README.md"
+    content = render(load_marketplace())
+    if path.exists() and path.read_text() == content:
+        print(f"{path}: up to date")
+        return 0
+    if args.pre_commit:
+        print(f"{path}: stale, run just render", file=sys.stderr)
+        return 1
+    path.write_text(content)
+    print(f"{path}: rendered")
+    return 0
 
 
 def main():
@@ -304,7 +314,16 @@ def main():
     subparsers.add_parser(
         "bump", help="bump versions of plugins with staged changes"
     )
-    subparsers.add_parser("readme", help="regenerate README.md")
+
+    readme_parser = subparsers.add_parser(
+        "render-readme", help="regenerate README.md"
+    )
+    readme_parser.add_argument(
+        "--pre-commit",
+        action="store_true",
+        dest="pre_commit",
+        help="write nothing; exit non-zero if the rendering would change",
+    )
 
     check_parser = subparsers.add_parser(
         "check-plugin",
@@ -326,8 +345,8 @@ def main():
     match args.command:
         case "bump":
             asyncio.run(cmd_bump(args))
-        case "readme":
-            cmd_readme(args)
+        case "render-readme":
+            return cmd_render_readme(args)
         case "check-plugin":
             asyncio.run(cmd_check_plugin(args))
         case "new-plugin":
@@ -335,4 +354,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

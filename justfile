@@ -2,13 +2,18 @@
 list: setup
     @just --list
 
-# Validate the marketplace and plugins
-lint: setup
+# Write the generated files, or with --pre-commit only check them
+[private]
+generate *flags:
+    "{{justfile_directory()}}/dev/marketplace.py" render-readme {{flags}}
+    "{{justfile_directory()}}/dev/render-llms.py" {{flags}}
+
+# Validate the marketplace, plugins, and generated files
+lint: setup (generate "--pre-commit")
     claude plugin validate .
 
-# Regenerate README.md from plugin and skill metadata
-readme: setup
-    "{{justfile_directory()}}/dev/marketplace.py" readme
+# Regenerate generated files: README.md and the llms skill
+render: setup (generate)
 
 # Bump the version of every plugin with staged changes
 bump: setup
@@ -27,8 +32,7 @@ improve *skills: setup
     claude "Use the skill-creator skill to improve these skills: {{skills}}"
 
 # Checks run by the git pre-commit hook
-pre-commit: check-plugin bump readme lint
-    git add README.md
+pre-commit: check-plugin bump lint
 
 # Install or replace the marketplace and enable all plugins
 install: setup
