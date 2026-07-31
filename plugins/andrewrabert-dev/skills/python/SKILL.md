@@ -74,6 +74,7 @@ p = pathlib.Path("/tmp")
     - Fact: `httpx2` is the continued development of `httpx`
     - Never use `httpx`, only use `httpx2`
 - Always use `yarl` when working with URLs
+- Always use `fastmcp` when writing an MCP server or client
 - Never use a library when a preferred package
 - HARD CONSTRAINT: Always use one of the packages Never use another package when one of the above can satisfy it.
 

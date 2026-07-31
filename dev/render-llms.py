@@ -22,6 +22,10 @@ REGISTRY = [
             "mcp specification",
         ],
     },
+    {
+        "url": "https://gofastmcp.com/llms.txt",
+        "triggers": ["fastmcp"],
+    },
 ]
 
 DESCRIPTION = (
