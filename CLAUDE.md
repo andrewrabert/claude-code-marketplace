@@ -1,6 +1,9 @@
 # Claude Marketplace Repository
 
-This is a Claude plugin marketplace. Plugins are topical and prefixed with `andrewrabert-`. Add a skill to the plugin whose topic fits; create a new plugin only when none fits or the user requests it.
+This is a Claude plugin marketplace. Plugins are topical. Add a skill to the plugin whose topic fits; create a new plugin only when none fits or the user requests it.
+
+Coding standards (Python, Textual TUIs, shell, justfiles, comments, llms.txt)
+are not plugins. They live in the user's notes under `dev/standards/`.
 
 ## Structure
 
@@ -15,8 +18,10 @@ justfile                               # Task runner — see `just --list`
 
 ## Plugins
 
-All plugin names are prefixed with `andrewrabert-`:
-- `andrewrabert-dev` - Python and shell scripting conventions
+- `handoff-verifier` - self-verification hooks managed by MCP tools
+- `noted` - skills for the noted CLI
+- `session-findings` - mine session transcripts into findings notes
+- `terse` - output style and skill for terse answers
 
 ## Adding Skills
 

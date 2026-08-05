@@ -3,17 +3,15 @@ list: setup
     @just --list
 
 # Write the generated files, or with --pre-commit only check them
-# README.md lists skill descriptions, so it renders after every skill it reads
 [private]
 generate *flags:
-    "{{justfile_directory()}}/dev/render-llms.py" {{flags}}
     "{{justfile_directory()}}/dev/marketplace.py" render-readme {{flags}}
 
 # Validate the marketplace, plugins, and generated files
 lint: setup (generate "--pre-commit")
     claude plugin validate .
 
-# Regenerate generated files: README.md and the llms skill
+# Regenerate generated files: README.md
 render: setup (generate)
 
 # Bump the version of every plugin with staged changes

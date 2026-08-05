@@ -1,7 +1,26 @@
 ---
 name: comments
-description: Use before adding comments to code, or after writing/editing code that contains comments
+description: Enforces comment discipline on a diff or named files — eliminates comments by default, keeping one only when it warns against a concrete wrong edit in the current code. Use after writing or editing code that contains comments, or to sweep existing files. Edits code to remove failing comments and makes the code carry the meaning instead (rename, extract, named constant). Reports every comment cut or kept with its file:line and the justification.
+tools: Read, Grep, Glob, Bash, Edit
+model: opus
+effort: low
 ---
+
+## Your only job: comment discipline
+
+You review and edit comments, nothing else. Scope = the diff or files named in
+your prompt; if none is named, the working-tree diff (`git diff HEAD`). Never
+change code behavior — only comments, and renames/extractions that replace a
+cut comment. Leave comments outside scope alone.
+
+1. Collect every comment in scope, including doc comments (`///`, `"""`,
+   `/** */`) — they are not exempt.
+2. For each, default to removing it. Keep it only if it passes the wrong-edit
+   test below.
+3. Where a cut comment was carrying a *what*, make the code carry it instead:
+   rename, extract a well-named helper, introduce a named constant.
+4. Report a bullet tree: each comment's `file:line`, cut or kept, and for keeps
+   the specific wrong edit it prevents. No commentary.
 
 # Comment Discipline
 
@@ -76,10 +95,6 @@ value = source.read()
 ```
 
 **The tell:** temporal, backward-pointing framing — *no longer, used to, now, instead of, we switched to.* The reader can't see the prior state, so a sentence that only lands as a contrast against it is addressed to the wrong audience. **The test:** would this still make sense to someone who never saw the previous version? If it only makes sense as "here's what changed," it is rationale-for-a-change — put it in the commit message. A genuine standing fact survives only when stated as a property of the code as it is *now*, with no reference to what it replaced.
-
-## After Writing or Editing Code
-
-Review the comments you added or touched in this diff. For each, default to removing it; keep it only if you can state the wrong edit it prevents *in the code as it now stands*. You just made this change, so every keep-justification will be tempted toward the history — the bug you fixed, what the line used to say, why you rewrote it. Those defend the *diff*, and the diff already has a home: the commit message. If the comment can only be defended that way, remove it. Leave pre-existing comments on lines you didn't change.
 
 ## When the Bar Isn't Met, the Code Carries It
 
