@@ -38,9 +38,10 @@ _No skills._
 
 ### terse
 
-| Skill   | Description                                                                                                                                                  |
-|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `terse` | Restate your previous response per the terse rules — answer only what was asked, lead with the answer, telegraphic fragments, symbols over words, no filler. |
+| Skill    | Description                                                                                                                                                  |
+|----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `terse`  | Restate your previous response per the terse rules — answer only what was asked, lead with the answer, telegraphic fragments, symbols over words, no filler. |
+| `unslop` | Cut AI tells from any writing. Must always apply.                                                                                                            |
 
 ## Usage
 
