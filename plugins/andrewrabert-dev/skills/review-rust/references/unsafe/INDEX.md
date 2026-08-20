@@ -1,6 +1,4 @@
-# Unsafe Checker - Quick Reference
-
-**Auto-generated from rules/**
+# Unsafe Rules - Quick Reference
 
 ## Rule Summary by Section
 

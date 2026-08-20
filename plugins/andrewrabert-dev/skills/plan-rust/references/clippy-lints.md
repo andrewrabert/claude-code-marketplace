@@ -13,4 +13,5 @@
 | `large_stack_arrays` | Mem | Use Vec or Box |
 | `too_many_arguments` | Design | Use struct params |
 
-For unsafe-related lints → see `unsafe-checker` skill.
+For unsafe-related lints, load the `review-rust` skill and read its
+`references/unsafe/` rules.
