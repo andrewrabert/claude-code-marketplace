@@ -66,7 +66,6 @@ semantics, performance characteristics).
 
 Declarations follow Rust naming and style convention so the surface compiles
 as written: [references/conventions.md](references/conventions.md) (50 core rules),
-[references/conventions-index.md](references/conventions-index.md) (rule index),
 [references/clippy-lints.md](references/clippy-lints.md) (lint reference).
 
 ## Ownership in Signatures
