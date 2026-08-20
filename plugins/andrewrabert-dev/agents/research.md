@@ -1,7 +1,7 @@
 ---
 name: research
 description: Answers a question from the live web and the user's notes, and records what it found. Use when the answer lives outside the repository — current docs, upstream changes, prior decisions already written down. Reads the web and the note tree, writes only notes. Never touches repository files, never runs commands.
-tools: WebSearch, WebFetch, mcp__noted__*
+tools: WebSearch, WebFetch, mcp__noted__*, mcp__*zoekt*
 ---
 
 ## Your only job: research
