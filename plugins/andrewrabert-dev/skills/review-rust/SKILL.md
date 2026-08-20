@@ -20,18 +20,18 @@ Read the file that matches the finding class. Paths are relative to this skill.
 
 | Finding involves | Read |
 |------------------|------|
-| Any Rust diff (always) | `references/anti-patterns.md` |
-| Moves, borrows, E0382/E0499/E0502/E0507/E0515/E0597/E0716 | `references/ownership-errors.md` |
-| Lifetime annotations, `'static`, HRTB, variance | `references/lifetime-patterns.md` |
-| API ownership shape: `String` vs `&str` params, taking ownership | `references/ownership-api-design.md` |
-| `unwrap`, `?`, error types, thiserror/anyhow, panics | `references/error-patterns.md` |
-| Send/Sync errors, deadlocks, locks across `await` | `references/concurrency-errors.md` |
-| Task spawning, select, channels, cancellation, backpressure | `references/async-patterns.md` |
-| `std::thread`, shared state, thread pools | `references/thread-patterns.md` |
-| Allocation waste, iterator chains, memory layout | `references/performance.md` |
-| `unsafe`, raw pointers, FFI, `#[repr(C)]`, transmute | `references/unsafe/INDEX.md`, then the matching rule in `references/unsafe/rules/` |
+| Any Rust diff (always) | [references/anti-patterns.md](references/anti-patterns.md) |
+| Moves, borrows, E0382/E0499/E0502/E0507/E0515/E0597/E0716 | [references/ownership-errors.md](references/ownership-errors.md) |
+| Lifetime annotations, `'static`, HRTB, variance | [references/lifetime-patterns.md](references/lifetime-patterns.md) |
+| API ownership shape: `String` vs `&str` params, taking ownership | [references/ownership-api-design.md](references/ownership-api-design.md) |
+| `unwrap`, `?`, error types, thiserror/anyhow, panics | [references/error-patterns.md](references/error-patterns.md) |
+| Send/Sync errors, deadlocks, locks across `await` | [references/concurrency-errors.md](references/concurrency-errors.md) |
+| Task spawning, select, channels, cancellation, backpressure | [references/async-patterns.md](references/async-patterns.md) |
+| `std::thread`, shared state, thread pools | [references/thread-patterns.md](references/thread-patterns.md) |
+| Allocation waste, iterator chains, memory layout | [references/performance.md](references/performance.md) |
+| `unsafe`, raw pointers, FFI, `#[repr(C)]`, transmute | [references/unsafe/INDEX.md](references/unsafe/INDEX.md), then the matching rule in `references/unsafe/rules/` |
 
-For unsafe review: `references/unsafe/checklists/review-unsafe.md` is the pass
+For unsafe review: [references/unsafe/checklists/review-unsafe.md](references/unsafe/checklists/review-unsafe.md) is the pass
 checklist; cite rule IDs (e.g. `safety-09`) in findings.
 
 ## Anti-Pattern → Better Pattern

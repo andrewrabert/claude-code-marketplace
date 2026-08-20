@@ -127,8 +127,8 @@ Before every unsafe block:
 
 ## Resources
 
-- `checklists/before-unsafe.md` - Pre-writing checklist
-- `checklists/review-unsafe.md` - Code review checklist
-- `checklists/common-pitfalls.md` - Common bugs and fixes
-- `examples/safe-abstraction.md` - Safe wrapper patterns
-- `examples/ffi-patterns.md` - FFI best practices
+- [checklists/before-unsafe.md](checklists/before-unsafe.md) - Pre-writing checklist
+- [checklists/review-unsafe.md](checklists/review-unsafe.md) - Code review checklist
+- [checklists/common-pitfalls.md](checklists/common-pitfalls.md) - Common bugs and fixes
+- [examples/safe-abstraction.md](examples/safe-abstraction.md) - Safe wrapper patterns
+- [examples/ffi-patterns.md](examples/ffi-patterns.md) - FFI best practices
