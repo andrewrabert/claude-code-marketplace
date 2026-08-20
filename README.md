@@ -38,10 +38,15 @@ _No skills._
 
 ### terse
 
-| Skill    | Description                                                                                                                                                  |
-|----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `terse`  | Restate your previous response per the terse rules — answer only what was asked, lead with the answer, telegraphic fragments, symbols over words, no filler. |
-| `unslop` | Cut AI tells from any writing. Must always apply.                                                                                                            |
+| Skill         | Description                                                                                                                                                                                                                                        |
+|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `humanizer`   | Rewrite AI-sounding text so it reads naturally without changing what it says.                                                                                                                                                                      |
+|               | Use when editing or reviewing prose for inflated claims,                                                                                                                                                                                           |
+|               | sales language, vague sources, repetitive structure, stock AI words, passive                                                                                                                                                                       |
+|               | voice, filler, or chatbot artifacts. Based on Wikipedia's "Signs of AI writing."                                                                                                                                                                   |
+| `i-have-adhd` | Shape output for a reader with ADHD: lead with the next action, number multi-step work, restate state across turns, suppress tangents, give specific time estimates, make wins visible. Invoke with /i-have-adhd; stays on until "stop adhd mode". |
+| `terse`       | Restate your previous response per the terse rules — answer only what was asked, lead with the answer, telegraphic fragments, symbols over words, no filler.                                                                                       |
+| `unslop`      | Cut AI tells from any writing. Must always apply.                                                                                                                                                                                                  |
 
 ## Usage
 
