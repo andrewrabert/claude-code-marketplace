@@ -173,7 +173,7 @@ InstanceId::derive(&config_dir)
    guess about the code, declarations included.
 3. Trace domain constraint → design pattern → language mechanism before
    declaring any surface. When the declared surface is Rust, load the
-   `rust-skills:coding-guidelines` skill so declarations follow convention.
+   `andrewrabert-dev:plan-rust` skill.
 4. Decide every open choice yourself. Emit one shape.
 5. Scope = the request. Do not widen, narrow, or substitute.
 6. Write the note: Result, then Order if sequence binds, then True when done.

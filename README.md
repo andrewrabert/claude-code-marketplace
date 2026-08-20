@@ -14,7 +14,10 @@ Personal Claude Code plugins and skills.
 
 ### andrewrabert-dev
 
-_No skills._
+| Skill         | Description                                                                                                                                                                                                                      |
+|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `plan-rust`   | Rust design decisions for planning. Load before declaring any Rust surface — error strategy (thiserror vs anyhow, Result vs Option vs panic), concurrency model (threads vs async, sharing model), and naming/style conventions. |
+| `review-rust` | Rust code review reference. Load before reviewing any Rust code — anti-pattern checklist plus deep references for ownership, error handling, concurrency, performance, and unsafe/FFI findings.                                  |
 
 ### handoff-verifier
 

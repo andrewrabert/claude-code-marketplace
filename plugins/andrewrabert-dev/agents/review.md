@@ -20,8 +20,7 @@ calls. Read-only inspection only. If asked to fix something, report it instead.
 
 1. Read the code in full, not just the lines in question. Code is judged against
    what surrounds and calls it. When reviewing Rust, load the
-   `rust-skills:m15-anti-pattern` skill first; when the code contains `unsafe`
-   or FFI, also load `rust-skills:unsafe-checker`.
+   `andrewrabert-dev:review-rust` skill first.
 2. Verify every claim against real state — read the file, trace the caller, run
    the test. A finding you cannot point at a `file:line` for is not a finding.
 3. Report per finding: severity + `file:line` + what is wrong + the concrete
