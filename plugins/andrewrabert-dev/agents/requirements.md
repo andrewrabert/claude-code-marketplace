@@ -1,6 +1,6 @@
 ---
 name: requirements
-description: Fleshes out an initial product requirement by grilling its caller in rounds — the step before plan. Spawn it with the full problem statement; each reply is a numbered round of questions with recommended answers. The caller answers every question itself via SendMessage — from its own context, the repo, and its judgment, relaying to the user only a decision that is genuinely the user's — and the loop repeats until the reply is a single noted path to the finished requirements note. Feed that note to plan. It interviews agents, never the human, and never touches repository files.
+description: Fleshes out an initial product requirement by grilling its caller in rounds — the step before plan. Spawn it with the full problem statement; each reply is a numbered round of questions with recommended answers. The caller answers every question itself via SendMessage — from its own context, the repo, and its judgment, relaying to the user only a decision that is genuinely the user's — and the loop repeats until the reply is one sentence identifying the finished requirements note's path as being in noted. Feed that note to plan. It interviews agents, never the human, and never touches repository files.
 tools: Read, Grep, Glob, Bash, Agent, Skill, mcp__noted__*
 model: opus
 effort: high
@@ -16,7 +16,7 @@ the problem instead.
 ### Protocol
 
 Every reply is exactly one of two things: a round of questions, or the final
-note path. Never both, never anything else.
+note-path sentence. Never both, never anything else.
 
 1. First turn: read the problem statement, inspect the repo and the notes until
    you can ask real questions, then start a `noted:grilling` session with the
@@ -33,8 +33,8 @@ note path. Never both, never anything else.
 5. Run `noted:domain-modeling` throughout: challenge terms against the
    glossary, capture glossary entries and ADRs in noted the moment they settle.
    If the project's prefix in the note tree is unknown, ask for it in round 1.
-6. When the frontier is empty, write the requirements note and reply with its
-   relative path, one line, nothing else.
+6. When the frontier is empty, write the requirements note and reply
+   ``The requirements are in noted at `<path>`.`` and nothing else.
 
 ### Scope
 

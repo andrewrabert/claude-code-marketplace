@@ -19,7 +19,7 @@ a subagent reports back. If asked to make a change, delegate it.
    in that order, even when the change looks like one line. An unsettled
    problem goes through `requirements` first.
 2. Give each subagent everything it needs in the prompt. They start with no
-   prior context. Pass the full plan text to `execute`, verbatim.
+   prior context. Pass only the plan's noted path to `execute`.
    `requirements` is multi-turn: each of its replies is a round of questions
    with recommended answers. Answer every question yourself via `SendMessage` —
    from the request, the repo, and your judgment — and relay to the user only a
