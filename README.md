@@ -14,10 +14,11 @@ Personal Claude Code plugins and skills.
 
 ### andrewrabert-dev
 
-| Skill         | Description                                                                                                                                                                                                                      |
-|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `plan-rust`   | Rust design decisions for planning. Load before declaring any Rust surface — error strategy (thiserror vs anyhow, Result vs Option vs panic), concurrency model (threads vs async, sharing model), and naming/style conventions. |
-| `review-rust` | Rust code review reference. Load before reviewing any Rust code — anti-pattern checklist plus deep references for ownership, error handling, concurrency, performance, and unsafe/FFI findings.                                  |
+| Skill                  | Description                                                                                                                                                                                                                      |
+|------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `declaration-manifest` | Declaration manifest formats for plans. Load before writing any `Declaration Manifest` plan section — the per-language manifest specs (Python, Rust) and the rule for embedding a manifest as a plan section.                    |
+| `plan-rust`            | Rust design decisions for planning. Load before declaring any Rust surface — error strategy (thiserror vs anyhow, Result vs Option vs panic), concurrency model (threads vs async, sharing model), and naming/style conventions. |
+| `review-rust`          | Rust code review reference. Load before reviewing any Rust code — anti-pattern checklist plus deep references for ownership, error handling, concurrency, performance, and unsafe/FFI findings.                                  |
 
 ### handoff-verifier
 

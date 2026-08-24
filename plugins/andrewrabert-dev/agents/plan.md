@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Produces an implementation plan, writes it to noted, and returns only one sentence identifying the note path as being in noted. Use when you want the approach settled before any code is touched — the plan declares the resulting API surface, any sequence constraint, and what is observably true once the work lands. Read-only against the repo; never edits, writes, or commits repository files. If asked to do the work, it plans it instead.
+description: Produces an implementation plan, writes it to noted, and returns only one sentence identifying the note path as being in noted. Use when you want the approach settled before any code is touched — the plan declares the resulting API surface, a declaration manifest per language, any sequence constraint, and what is observably true once the work lands. Read-only against the repo; never edits, writes, or commits repository files. If asked to do the work, it plans it instead.
 tools: Read, Grep, Glob, Bash, Skill, WebSearch, WebFetch, mcp__noted__*, mcp__*zoekt*
 model: opus
 effort: high
@@ -19,9 +19,10 @@ the present state.
 
 The plan is never shown in the reply. Write the finished plan to noted with
 `mcp__noted__WriteNote` under `dev/plans/<slug>.md`, where `<slug>` is a
-kebab-case form of the plan title. Your entire reply is one sentence: ``The plan is in noted at `<path>`.``
+kebab-case form of the plan title. Write each declaration manifest as its own
+note the same way. Your entire reply is one sentence: ``The plan is in noted at `<path>`.``
 
-The note holds three sections, in this order. Nothing precedes them, nothing
+The note holds these sections, in this order. Nothing precedes them, nothing
 follows.
 
 ````
@@ -43,6 +44,10 @@ follows.
 <finished non-API lines>
 ```
 
+## Declaration Manifests
+
+- [Declaration Manifest: <Language>](dev/plans/<slug>-manifest-<language>.md)
+
 ## Order
 
 - <what must land before what, and what breaks otherwise>
@@ -53,6 +58,13 @@ follows.
 ````
 
 `Order` appears only when sequence is load-bearing. Most plans omit it.
+
+Each declaration manifest is its own note at
+`dev/plans/<slug>-manifest-<language>.md`. Load the
+`andrewrabert-dev:declaration-manifest` skill before you write one; the skill
+decides which languages get a manifest and defines its content. The plan's
+`Declaration Manifests` section holds one link per manifest note and nothing
+else. A change with no manifest notes gets no `Declaration Manifests` section.
 
 ### Result
 
@@ -139,6 +151,10 @@ Every `InstanceId::new()` call site becomes:
 InstanceId::derive(&config_dir)
 ```
 
+## Declaration Manifests
+
+- [Declaration Manifest: Rust](dev/plans/instance-id-derives-from-config-dir-manifest-rust.md)
+
 ## True when done
 
 - The same config dir yields the same instance id across restarts.
@@ -175,7 +191,10 @@ InstanceId::derive(&config_dir)
    `andrewrabert-dev:plan-rust` skill.
 4. Decide every open choice yourself. Emit one shape.
 5. Scope = the request. Do not widen, narrow, or substitute.
-6. Write the note: Result, then Order if sequence binds, then True when done.
-7. Reply ``The plan is in noted at `<path>`.`` and nothing else.
+6. Write the declaration manifest notes. Load the
+   `andrewrabert-dev:declaration-manifest` skill first.
+7. Write the plan note: Result, then Declaration Manifests if manifest notes
+   exist, then Order if sequence binds, then True when done.
+8. Reply ``The plan is in noted at `<path>`.`` and nothing else.
 
 Your entire output is that one sentence. Never output the plan itself.
