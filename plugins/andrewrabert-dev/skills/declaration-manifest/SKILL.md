@@ -1,6 +1,6 @@
 ---
 name: declaration-manifest
-description: Declaration manifest formats. Load before you write a declaration manifest. It contains the per-surface manifest specs (Python, Rust, CLI).
+description: Declaration manifest formats. Load before you write a declaration manifest. It contains the per-surface manifest specs (CLI, HTTP, MCP, Python, Rust).
 ---
 
 # Declaration Manifest
@@ -18,9 +18,11 @@ Rules:
 
 Each per-surface spec gives the standalone format and an example:
 
+- [references/cli.md](references/cli.md) — constrained kinds subcommand, flag, option, positional argument.
+- [references/http.md](references/http.md) — constrained kinds endpoint, path parameter, query parameter, header, request body field.
+- [references/mcp.md](references/mcp.md) — constrained kinds tool, tool argument.
 - [references/python.md](references/python.md) — constrained kinds `def`, `class`.
 - [references/rust.md](references/rust.md) — constrained kinds `fn`, `struct`, `trait`, `impl`.
-- [references/cli.md](references/cli.md) — constrained kinds subcommand, flag, option, positional argument.
 
 ## The standalone document
 

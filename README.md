@@ -16,7 +16,7 @@ Personal Claude Code plugins and skills.
 
 | Skill                  | Description                                                                                                                                                                                                                      |
 |------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `declaration-manifest` | Declaration manifest formats. Load before you write a declaration manifest. It contains the per-surface manifest specs (Python, Rust, CLI).                                                                                      |
+| `declaration-manifest` | Declaration manifest formats. Load before you write a declaration manifest. It contains the per-surface manifest specs (CLI, HTTP, MCP, Python, Rust).                                                                           |
 | `plan-rust`            | Rust design decisions for planning. Load before declaring any Rust surface — error strategy (thiserror vs anyhow, Result vs Option vs panic), concurrency model (threads vs async, sharing model), and naming/style conventions. |
 | `review-rust`          | Rust code review reference. Load before reviewing any Rust code — anti-pattern checklist plus deep references for ownership, error handling, concurrency, performance, and unsafe/FFI findings.                                  |
 
