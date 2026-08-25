@@ -1,7 +1,7 @@
 {
   "name": "terse",
-  "description": "Mirror of the global Stop-hook verifier: answer only what was asked, lead with the direct answer, drop all filler",
-  "version": "2026.08.24.0",
+  "description": "Output styles and skills that control response prose: terse answers, ASD-STE100 Simplified Technical English, ADHD-shaped output, and removal of AI-sounding text",
+  "version": "2026.08.24.1",
   "author": {
     "name": "Andrew Rabert"
   }
