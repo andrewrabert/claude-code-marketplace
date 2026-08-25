@@ -3,7 +3,7 @@
 A manifest for one change, stated as an equation: the set of Rust declarations the combined diff adds equals the set under `## Additions`, and the set it deletes equals the set under `## Deletions`.
 
 - One document covers one change, in both directions: additions and deletions.
-- A direction with no declarations gets no section; an absent section means the empty set.
+- Both direction sections are always present. An empty `## Additions` section holds the phrase `No additions.` in place of file sections. An empty `## Deletions` section holds the phrase `No deletions.`
 - Constrained declaration kinds: `fn`, `struct`, `trait`, `impl`. Bodies, private helpers, and formatting sit outside the equation and stay free.
 - Does not document rationale, behavior, implementation, or any file content beyond declarations.
 - Begins with a title, `# Declaration Manifest: Rust`, followed by the equation as one binding sentence.
@@ -89,4 +89,24 @@ impl InstanceId {
     pub fn new() -> InstanceId;
 }
 ```
+````
+
+## Example: additions only
+
+````markdown
+# Declaration Manifest: Rust
+The set of `fn`, `struct`, `trait`, and `impl` declarations the resulting
+combined diff adds must equal the declarations under `## Additions`, and
+the set it deletes must equal the declarations under `## Deletions`.
+
+## Additions
+
+### src/platform_abi/src/instance.rs
+```rust
+pub fn default_config_dir() -> PathBuf;
+```
+
+## Deletions
+
+No deletions.
 ````

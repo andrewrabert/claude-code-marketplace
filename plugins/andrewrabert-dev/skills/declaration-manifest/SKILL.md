@@ -7,7 +7,9 @@ description: Declaration manifest formats for plans. Load before writing any `De
 
 A declaration manifest states one change as an equation. The set of declarations
 the combined diff adds equals the set under `Additions`. The set it deletes
-equals the set under `Deletions`.
+equals the set under `Deletions`. Both direction sections are always present.
+An empty `Additions` section holds only the phrase `No additions.` An empty
+`Deletions` section holds only the phrase `No deletions.`
 
 Per-surface specs, each with the standalone format and an example:
 
