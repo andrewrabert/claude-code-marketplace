@@ -1,51 +1,49 @@
 ---
 name: declaration-manifest
-description: Declaration manifest formats for plans. Load before writing any `Declaration Manifest` plan section — the per-surface manifest specs (Python, Rust, CLI) and the rule for embedding a manifest as a plan section.
+description: Declaration manifest formats. Load before you write a declaration manifest. It contains the per-surface manifest specs (Python, Rust, CLI).
 ---
 
 # Declaration Manifest
 
-A declaration manifest states one change as an equation. The set of declarations
-the combined diff adds equals the set under `Additions`. The set it deletes
-equals the set under `Deletions`. Both direction sections are always present.
-An empty `Additions` section holds only the phrase `No additions.` An empty
-`Deletions` section holds only the phrase `No deletions.`
+Rules:
 
-Per-surface specs, each with the standalone format and an example:
+- A declaration manifest is a specification of all declaration additions & removals for a code change.
+- It describes the complete, exact declaration surface a code change must have.
+- The combined diff adds exactly the declarations under `Additions`.
+- The combined diff deletes exactly the declarations under `Deletions`.
+- When the combined diff adds no declarations, the `Additions` section states
+  this explicitly: its only content is the phrase `No additions.`
+- When the combined diff deletes no declarations, the `Deletions` section
+  states this explicitly: its only content is the phrase `No deletions.`
+
+Each per-surface spec gives the standalone format and an example:
 
 - [references/python.md](references/python.md) — constrained kinds `def`, `class`.
 - [references/rust.md](references/rust.md) — constrained kinds `fn`, `struct`, `trait`, `impl`.
 - [references/cli.md](references/cli.md) — constrained kinds subcommand, flag, option, positional argument.
 
-## Embedding in a plan
+## The standalone document
 
-The standalone manifest is a document with an H1 title. Inside a plan it is one
-H2 section:
+The standalone manifest is a document with an H1 title. Write one manifest for
+each surface in which the change adds or deletes constrained declarations. A
+surface with no constrained declarations gets no manifest.
 
-- The title becomes the section heading: `## Declaration Manifest: <Surface>`.
-- Every other heading demotes one level: `## Additions` becomes `### Additions`,
-  and `### <specific file>` becomes `#### <specific file>`.
-- The heading references inside the binding sentence demote the same way.
-- Write one section per surface in which the change adds or deletes constrained
-  declarations. A surface with no constrained declarations gets no section.
-- Every other rule of the standalone format applies unchanged.
-
-Embedded skeleton:
+Skeleton:
 
 ````markdown
-## Declaration Manifest: <Surface>
-<the surface's binding sentence, heading references demoted>
+# Declaration Manifest: <Surface>
+<the surface's binding sentence>
 
-### Additions
+## Additions
 
-#### <specific_file>
+### <specific_file>
 ```<lang>
 <declarations>
 ```
 
-### Deletions
+## Deletions
 
-#### <specific_file>
+### <specific_file>
 ```<lang>
 <declarations>
 ```
