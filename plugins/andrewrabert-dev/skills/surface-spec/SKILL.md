@@ -1,13 +1,13 @@
 ---
-name: declaration-manifest
-description: Declaration manifest formats. Load before you write a declaration manifest. It contains the per-surface manifest specs (CLI, HTTP, MCP, Python, Rust).
+name: surface-spec
+description: Surface spec formats. Load before you write a surface spec. It contains the per-surface formats (CLI, HTTP, MCP, Python, Rust).
 ---
 
-# Declaration Manifest
+# Surface Spec
 
 Rules:
 
-- A declaration manifest is a specification of all declaration additions & removals for a code change.
+- A surface spec is a specification of all declaration additions & removals for a code change.
 - It describes the complete, exact declaration surface a code change must have.
 - The combined diff adds exactly the declarations under `Additions`.
 - The combined diff deletes exactly the declarations under `Deletions`.
@@ -26,14 +26,14 @@ Each per-surface spec gives the standalone format and an example:
 
 ## The standalone document
 
-The standalone manifest is a document with an H1 title. Write one manifest for
+The standalone spec is a document with an H1 title. Write one spec for
 each surface in which the change adds or deletes constrained declarations. A
-surface with no constrained declarations gets no manifest.
+surface with no constrained declarations gets no spec.
 
 Skeleton:
 
 ````markdown
-# Declaration Manifest: <Surface>
+# Surface Spec: <Surface>
 <the surface's binding sentence>
 
 ## Additions

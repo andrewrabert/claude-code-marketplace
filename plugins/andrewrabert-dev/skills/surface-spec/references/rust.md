@@ -1,12 +1,12 @@
-# Rust Declaration Manifest
+# Rust Surface Spec
 
-A manifest for one change, stated as an equation: the set of Rust declarations the combined diff adds equals the set under `## Additions`, and the set it deletes equals the set under `## Deletions`.
+A surface spec for one change, stated as an equation: the set of Rust declarations the combined diff adds equals the set under `## Additions`, and the set it deletes equals the set under `## Deletions`.
 
 - One document covers one change, in both directions: additions and deletions.
 - Both direction sections are always present. An empty `## Additions` section holds the phrase `No additions.` in place of file sections. An empty `## Deletions` section holds the phrase `No deletions.`
 - Constrained declaration kinds: `fn`, `struct`, `trait`, `impl`. Bodies, private helpers, and formatting sit outside the equation and stay free.
 - Does not document rationale, behavior, implementation, or any file content beyond declarations.
-- Begins with a title, `# Declaration Manifest: Rust`, followed by the equation as one binding sentence.
+- Begins with a title, `# Surface Spec: Rust`, followed by the equation as one binding sentence.
 - Each direction section holds one `### <specific file>` section per file that holds a constrained declaration; each file section holds one fenced `rust` block.
 - A function is a `;`-terminated signature stub. Methods and associated functions sit inside their `impl` block.
 - A struct or trait is its full definition, private fields included.
@@ -15,7 +15,7 @@ A manifest for one change, stated as an equation: the set of Rust declarations t
 ## Format
 
 ````markdown
-# Declaration Manifest: Rust
+# Surface Spec: Rust
 The set of `fn`, `struct`, `trait`, and `impl` declarations the resulting
 combined diff adds must equal the declarations under `## Additions`, and
 the set it deletes must equal the declarations under `## Deletions`.
@@ -38,7 +38,7 @@ the set it deletes must equal the declarations under `## Deletions`.
 ## Example
 
 ````markdown
-# Declaration Manifest: Rust
+# Surface Spec: Rust
 The set of `fn`, `struct`, `trait`, and `impl` declarations the resulting
 combined diff adds must equal the declarations under `## Additions`, and
 the set it deletes must equal the declarations under `## Deletions`.
@@ -94,7 +94,7 @@ impl InstanceId {
 ## Example: additions only
 
 ````markdown
-# Declaration Manifest: Rust
+# Surface Spec: Rust
 The set of `fn`, `struct`, `trait`, and `impl` declarations the resulting
 combined diff adds must equal the declarations under `## Additions`, and
 the set it deletes must equal the declarations under `## Deletions`.

@@ -1,12 +1,12 @@
-# Python Declaration Manifest
+# Python Surface Spec
 
-A manifest for one change, stated as an equation: the set of Python declarations the combined diff adds equals the set under `## Additions`, and the set it deletes equals the set under `## Deletions`.
+A surface spec for one change, stated as an equation: the set of Python declarations the combined diff adds equals the set under `## Additions`, and the set it deletes equals the set under `## Deletions`.
 
 - One document covers one change, in both directions: additions and deletions.
 - Both direction sections are always present. An empty `## Additions` section holds the phrase `No additions.` in place of file sections. An empty `## Deletions` section holds the phrase `No deletions.`
 - Constrained declaration kinds: `def`, `class`. Bodies, private helpers, and formatting sit outside the equation and stay free.
 - Does not document rationale, behavior, implementation, or any file content beyond declarations.
-- Begins with a title, `# Declaration Manifest: Python`, followed by the equation as one binding sentence.
+- Begins with a title, `# Surface Spec: Python`, followed by the equation as one binding sentence.
 - Each direction section holds one `### <specific file>` section per file that holds a constrained declaration; each file section holds one fenced `python` block.
 - A function is a signature stub with a `: ...` body. Methods sit inside their class, decorators intact.
 - A class is its full definition, attributes included.
@@ -15,7 +15,7 @@ A manifest for one change, stated as an equation: the set of Python declarations
 ## Format
 
 ````markdown
-# Declaration Manifest: Python
+# Surface Spec: Python
 The set of `def` and `class` declarations the resulting combined diff
 adds must equal the declarations under `## Additions`, and the set it
 deletes must equal the declarations under `## Deletions`.
@@ -38,7 +38,7 @@ deletes must equal the declarations under `## Deletions`.
 ## Example
 
 ````markdown
-# Declaration Manifest: Python
+# Surface Spec: Python
 The set of `def` and `class` declarations the resulting combined diff
 adds must equal the declarations under `## Additions`, and the set it
 deletes must equal the declarations under `## Deletions`.
@@ -90,7 +90,7 @@ class InstanceId:
 ## Example: additions only
 
 ````markdown
-# Declaration Manifest: Python
+# Surface Spec: Python
 The set of `def` and `class` declarations the resulting combined diff
 adds must equal the declarations under `## Additions`, and the set it
 deletes must equal the declarations under `## Deletions`.

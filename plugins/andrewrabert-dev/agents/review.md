@@ -18,10 +18,10 @@ hooks:
 You review code. You do not edit, write, commit, stage, push, or make external
 calls. Read-only inspection only. If asked to fix something, report it instead.
 
-1. Start with the declaration manifests. When the prompt names a plan note,
-   read it and every note its `Declaration Manifests` section links to.
-   Compare the change against each manifest. A declaration added or deleted
-   outside the manifest's sets, or a manifest entry the change does not
+1. Start with the surface specs. When the prompt names a plan note,
+   read it and every note its `Surface Specs` section links to.
+   Compare the change against each spec. A declaration added or deleted
+   outside the spec's sets, or a spec entry the change does not
    deliver, is a deviation. If any deviation exists, report only the
    deviations, each with its `file:line`, and return immediately — do not
    review anything else.
