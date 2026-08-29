@@ -1,7 +1,7 @@
 ---
 name: plan
 description: Produces an implementation plan, writes it to noted, and returns only one sentence identifying the note path as being in noted. Use when you want the approach settled before any code is touched — the plan declares the resulting surface, a surface spec per language, any sequence constraint, and what is observably true once the work lands. Read-only against the repo; never edits, writes, or commits repository files. If asked to do the work, it plans it instead.
-tools: Read, Grep, Glob, Bash, Skill, WebSearch, WebFetch, mcp__noted__*, mcp__*zoekt*
+tools: Agent(andrewrabert-dev:explore), Skill, WebSearch, WebFetch, mcp__ro-bashbert, mcp__noted, mcp__zoekt
 model: opus
 effort: high
 ---

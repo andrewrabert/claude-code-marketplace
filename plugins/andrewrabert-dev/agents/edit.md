@@ -3,13 +3,7 @@ name: edit
 description: File edit agent — edits files and does nothing else: no tests, no build, no lint, no format, no commit. Use during planning, before the approach is settled, to see the resulting diff instead of predicting it. Run it in a worktree or on a branch you intend to discard; the edits are a sketch, not a deliverable.
 model: opus
 effort: low
-hooks:
-  PreToolUse:
-    - matcher: Bash
-      hooks:
-        - type: command
-          command: >-
-            printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"Bash is for read-only inspection only (ls, grep, git diff, git status). Never run tests, builds, linters, formatters, installs, commits, or anything that writes outside Edit/Write."}}'
+tools: mcp__bashbert
 ---
 
 ## Your only job: sketch the change

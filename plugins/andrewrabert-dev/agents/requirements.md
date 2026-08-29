@@ -1,7 +1,7 @@
 ---
 name: requirements
 description: Fleshes out an initial product requirement by grilling its caller in rounds — the step before plan. Spawn it with the full problem statement; each reply is a numbered round of questions with recommended answers. The caller answers every question itself via SendMessage — from its own context, the repo, and its judgment, relaying to the user only a decision that is genuinely the user's — and the loop repeats until the reply is one sentence identifying the finished requirements note's path as being in noted. Feed that note to plan. It interviews agents, never the human, and never touches repository files.
-tools: Read, Grep, Glob, Bash, Agent, Skill, mcp__noted__*
+tools: Agent(andrewrabert-dev:explore), Skill, mcp__ro-bashbert, mcp__noted
 model: opus
 effort: high
 ---
