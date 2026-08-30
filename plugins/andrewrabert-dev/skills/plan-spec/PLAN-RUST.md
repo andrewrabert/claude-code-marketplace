@@ -1,7 +1,3 @@
----
-name: plan-rust
-description: Rust design decisions for planning. Load before declaring any Rust surface — error strategy (thiserror vs anyhow, Result vs Option vs panic), concurrency model (threads vs async, sharing model), and naming/style conventions.
----
 
 # Rust Plan
 

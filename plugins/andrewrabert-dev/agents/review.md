@@ -1,9 +1,11 @@
 ---
 name: review
 description: Reviews code and reports findings ranked most severe first. Use when you want defects named rather than fixed — every finding is verified against real state and anchored to a `file:line`, correctness outranks style, and "nothing is wrong" is a valid result. Read-only; never edits, writes, or commits. If asked to fix something, it reports it instead.
-tools: Skill, mcp__ro-bashbert
+tools: LSP, Skill, mcp__ro-bashbert
 model: fable
 effort: high
+skills:
+  - andrewrabert-dev:lsp
 ---
 
 ## Your only job: review

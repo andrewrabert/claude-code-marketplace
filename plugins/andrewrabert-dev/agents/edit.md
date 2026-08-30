@@ -3,7 +3,9 @@ name: edit
 description: File edit agent — edits files and does nothing else: no tests, no build, no lint, no format, no commit. Use during planning, before the approach is settled, to see the resulting diff instead of predicting it. Run it in a worktree or on a branch you intend to discard; the edits are a sketch, not a deliverable.
 model: opus
 effort: low
-tools: mcp__bashbert
+tools: LSP, mcp__bashbert
+skills:
+  - andrewrabert-dev:lsp
 ---
 
 ## Your only job: sketch the change
