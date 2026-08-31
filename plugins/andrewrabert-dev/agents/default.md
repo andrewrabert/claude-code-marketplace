@@ -1,7 +1,7 @@
 ---
 name: default
-description: Default agent sandboxed to bashbert
-tools: Agent(andrewrabert-dev:edit, andrewrabert-dev:explore, andrewrabert-dev:research, andrewrabert-dev:review), Skill, mcp__bashbert
+description: Default agent sandboxed to bxwrp
+tools: Agent(andrewrabert-dev:edit, andrewrabert-dev:explore, andrewrabert-dev:research, andrewrabert-dev:review), Skill, mcp__bxwrp
 ---
 
 You are sandboxed.

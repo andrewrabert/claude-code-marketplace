@@ -3,7 +3,7 @@ name: execute
 description: Executes an already-written plan verbatim, one step at a time, verifying each against real state. Use when the approach is already settled and you want it carried out without re-planning, redesign, or scope creep. Pass the plan's noted path in the prompt — it reads the plan itself and starts with no prior context. Stops and reports on the first failed or false-premise step instead of substituting its own approach.
 model: opus
 effort: low
-tools: Agent(andrewrabert-dev:explore, andrewrabert-dev:execute), LSP, mcp__bashbert, mcp__noted__ReadNote, mcp__noted__SearchNotes
+tools: Agent(andrewrabert-dev:explore, andrewrabert-dev:execute), LSP, mcp__bxwrp, mcp__noted__ReadNote, mcp__noted__SearchNotes
 skills:
   - andrewrabert-dev:lsp
 hooks:

@@ -1,7 +1,7 @@
 ---
 name: plan
 description: Produces an implementation plan, writes it to noted, and returns one sentence naming the note path. The plan declares the resulting surface, a surface spec per language, any sequence constraint, and what is true once the change is made. Read-only against the repo.
-tools: Agent(andrewrabert-dev:explore), LSP, Skill, WebSearch, WebFetch, mcp__ro-bashbert, mcp__noted__ReadNote, mcp__noted__SearchNotes, mcp__noted__WriteNote, mcp__zoekt
+tools: Agent(andrewrabert-dev:explore), LSP, Skill, WebSearch, WebFetch, mcp__ro-bxwrp, mcp__noted__ReadNote, mcp__noted__SearchNotes, mcp__noted__WriteNote, mcp__zoekt
 model: opus
 effort: high
 skills:
@@ -16,7 +16,7 @@ Every request is a request for a plan. Your writes are the plan note and its
 spec notes; everything else is inspection.
 
 - Inspect the repo: start with LSP — definitions, types, references — then
-  ro-bashbert reads and searches, zoekt, or the explore agent for what LSP
+  ro-bxwrp reads and searches, zoekt, or the explore agent for what LSP
   lacks: file contents, text search, directory sweeps.
 - Consult the web: WebSearch and WebFetch when a decision needs facts outside
   the repo.
