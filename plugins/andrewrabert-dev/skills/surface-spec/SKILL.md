@@ -1,6 +1,6 @@
 ---
 name: surface-spec
-description: Surface spec formats. Load before you write a surface spec. It contains the per-surface formats (CLI, HTTP, MCP, Python, Rust).
+description: Surface spec formats. Load before you write a surface spec. It contains the per-surface formats (CLI, HTTP, MCP, Python, Rust, TypeScript).
 ---
 
 # Surface Spec
@@ -23,6 +23,7 @@ Each per-surface spec gives the standalone format and an example:
 - [references/mcp.md](references/mcp.md) — constrained kinds tool, tool argument.
 - [references/python.md](references/python.md) — constrained kinds `def`, `class`.
 - [references/rust.md](references/rust.md) — constrained kinds `fn`, `struct`, `trait`, `impl`.
+- [references/typescript.md](references/typescript.md) — constrained kinds `function`, `class`, `interface`, `type`, `enum`.
 
 ## The standalone document
 
