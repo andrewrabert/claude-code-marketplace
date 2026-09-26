@@ -1,6 +1,6 @@
 ---
 name: edit
-description: File edit agent — edits files and does nothing else: no tests, no build, no lint, no format, no commit. Use during planning, before the approach is settled, to see the resulting diff instead of predicting it. Run it in a worktree or on a branch you intend to discard; the edits are a sketch, not a deliverable.
+description: File edit agent - edits files and does nothing else.
 model: opus
 effort: low
 tools: LSP, mcp__bxwrp
