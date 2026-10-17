@@ -4,21 +4,22 @@ A surface spec for one change, stated as an equation: the set of Rust declaratio
 
 - One document covers one change, in both directions: additions and deletions.
 - Both direction sections are always present. An empty `## Additions` section holds the phrase `No additions.` in place of file sections. An empty `## Deletions` section holds the phrase `No deletions.`
-- Constrained declaration kinds: `fn`, `struct`, `trait`, `impl`. Bodies, private helpers, and formatting sit outside the equation and stay free.
+- Constrained declaration kinds: `fn`, `struct`, `enum`, `trait`, `impl`. Bodies, private helpers, and formatting sit outside the equation and stay free.
 - Does not document rationale, behavior, implementation, or any file content beyond declarations.
 - Begins with a title, `# Surface Spec: Rust`, followed by the equation as one binding sentence.
 - Each direction section holds one `### <specific file>` section per file that holds a constrained declaration; each file section holds one fenced `rust` block.
 - A function is a `;`-terminated signature stub. Methods and associated functions sit inside their `impl` block.
-- A struct or trait is its full definition, private fields included.
+- A struct, enum, or trait is its full definition, private fields and all variants included.
 - A trait implementation is one line: `impl <Trait> for <Type>;`.
 
 ## Format
 
 ````markdown
 # Surface Spec: Rust
-The set of `fn`, `struct`, `trait`, and `impl` declarations the resulting
-combined diff adds must equal the declarations under `## Additions`, and
-the set it deletes must equal the declarations under `## Deletions`.
+The set of `fn`, `struct`, `enum`, `trait`, and `impl` declarations the
+resulting combined diff adds must equal the declarations under
+`## Additions`, and the set it deletes must equal the declarations under
+`## Deletions`.
 
 ## Additions
 
@@ -39,9 +40,10 @@ the set it deletes must equal the declarations under `## Deletions`.
 
 ````markdown
 # Surface Spec: Rust
-The set of `fn`, `struct`, `trait`, and `impl` declarations the resulting
-combined diff adds must equal the declarations under `## Additions`, and
-the set it deletes must equal the declarations under `## Deletions`.
+The set of `fn`, `struct`, `enum`, `trait`, and `impl` declarations the
+resulting combined diff adds must equal the declarations under
+`## Additions`, and the set it deletes must equal the declarations under
+`## Deletions`.
 
 ## Additions
 
@@ -68,8 +70,15 @@ pub async fn resolve_instance(config_dir: &Path) -> InstanceId;
 
 ### src/daemon/src/daemon.rs
 ```rust
+pub enum DaemonState {
+    Starting,
+    Running { pid: u32 },
+    Stopped(ExitStatus),
+}
+
 pub struct Daemon {
     instance_id: InstanceId,
+    state: DaemonState,
 }
 
 impl Daemon {
@@ -95,9 +104,10 @@ impl InstanceId {
 
 ````markdown
 # Surface Spec: Rust
-The set of `fn`, `struct`, `trait`, and `impl` declarations the resulting
-combined diff adds must equal the declarations under `## Additions`, and
-the set it deletes must equal the declarations under `## Deletions`.
+The set of `fn`, `struct`, `enum`, `trait`, and `impl` declarations the
+resulting combined diff adds must equal the declarations under
+`## Additions`, and the set it deletes must equal the declarations under
+`## Deletions`.
 
 ## Additions
 

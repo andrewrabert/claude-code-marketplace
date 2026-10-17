@@ -22,7 +22,7 @@ Each per-surface spec gives the standalone format and an example:
 - [references/http.md](references/http.md) — constrained kinds endpoint, path parameter, query parameter, header, request body field.
 - [references/mcp.md](references/mcp.md) — constrained kinds tool, tool argument.
 - [references/python.md](references/python.md) — constrained kinds `def`, `class`.
-- [references/rust.md](references/rust.md) — constrained kinds `fn`, `struct`, `trait`, `impl`.
+- [references/rust.md](references/rust.md) — constrained kinds `fn`, `struct`, `enum`, `trait`, `impl`.
 - [references/typescript.md](references/typescript.md) — constrained kinds `function`, `class`, `interface`, `type`, `enum`.
 
 ## The standalone document
