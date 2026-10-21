@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__plugin_pr-review_pr-review__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -c '.tool_input as $input | {hookSpecificOutput: ({hookEventName: \"PreToolUse\"} + (if $input.session_id != null then {permissionDecision: \"deny\", permissionDecisionReason: \"session_id cannot be set.\"} else {permissionDecision: \"allow\", updatedInput: ($input + {session_id: (if (.agent_id // \"\") != \"\" then \"\\(.session_id)/\\(.agent_id)\" else .session_id end)})} end))}'"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -31,6 +31,11 @@
       "name": "andrewrabert-dev",
       "source": "./plugins/andrewrabert-dev",
       "description": "Development agents"
+    },
+    {
+      "name": "pr-review",
+      "source": "./plugins/pr-review",
+      "description": "Review pull requests in a sandbox using local .md files (`${CLAUDE_PLUGIN_DATA}/standards`)"
     }
   ]
 }

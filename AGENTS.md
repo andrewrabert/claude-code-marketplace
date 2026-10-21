@@ -20,6 +20,7 @@ justfile                               # Task runner — see `just --list`
 
 - `handoff-verifier` - self-verification hooks managed by MCP tools
 - `noted` - skills for the noted CLI
+- `pr-review` - sandboxed PR review against local standards
 - `session-findings` - mine session transcripts into findings notes
 - `terse` - output style and skill for terse answers
 
