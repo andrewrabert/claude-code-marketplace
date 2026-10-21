@@ -1,8 +1,0 @@
-{
-  "name": "pr-review",
-  "description": "Review pull requests in a sandbox using local .md files (`${CLAUDE_PLUGIN_DATA}/standards`)",
-  "version": "2026.10.21.0",
-  "author": {
-    "name": "Andrew Rabert"
-  }
-}

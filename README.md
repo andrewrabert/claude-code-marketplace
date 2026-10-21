@@ -7,9 +7,9 @@ Personal Claude Code plugins and skills.
 | Plugin             | Description                                                                                                                                                                                                                                                                                                                                                                    |
 |--------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `andrewrabert-dev` | Development agents                                                                                                                                                                                                                                                                                                                                                             |
+| `bashkit-agents`   | Review pull requests in a sandbox using local .md files (`$STANDARDS_DIR`, default `${CLAUDE_PLUGIN_DATA}/standards`)                                                                                                                                                                                                                                                          |
 | `handoff-verifier` | Self-verification hooks managed by MCP tools: a Stop reminder that forces one more reasoning turn before a turn ends, plus ExitPlanMode and AskUserQuestion gates that block the tool until you self-certify the constraints are met via a token confirm. Each check is set per global, project, or session scope, and the hook concatenates the active scopes broad-to-narrow |
 | `noted`            | noted - https://github.com/andrewrabert/noted                                                                                                                                                                                                                                                                                                                                  |
-| `pr-review`        | Review pull requests in a sandbox using local .md files (`${CLAUDE_PLUGIN_DATA}/standards`)                                                                                                                                                                                                                                                                                    |
 | `session-findings` | Mine Claude Code session transcripts into self-contained per-session findings notes (bugs, development friction, reusable learnings) via a deterministic digest pass plus model classification; includes the digest/render scripts and a resumable sweep harness that writes findings.json and findings.md keyed by deterministic session id                                   |
 | `terse`            | Output styles and skills that control response prose: terse answers, ASD-STE100 Simplified Technical English, ADHD-shaped output, and removal of AI-sounding text                                                                                                                                                                                                              |
 
@@ -22,6 +22,10 @@ Personal Claude Code plugins and skills.
 | `review-rust`  | Rust code review reference. Load before reviewing any Rust code — anti-pattern checklist plus deep references for ownership, error handling, concurrency, performance, and unsafe/FFI findings.                                                                                                                                                                                                   |
 | `spec-doc`     | Write a standalone specification document for a surface that already exists or is being designed — a CLI, a file format, an API, a protocol. Produces a permanent reference a reader can implement or script against without reading the source. Load before writing any document named a spec, a format, or a reference. Not for a per-change declaration delta; that is the surface-spec skill. |
 | `surface-spec` | Surface spec formats. Load before you write a surface spec. It contains the per-surface formats (CLI, HTTP, MCP, Python, Rust, TypeScript).                                                                                                                                                                                                                                                       |
+
+### bashkit-agents
+
+_No skills._
 
 ### handoff-verifier
 
@@ -36,10 +40,6 @@ _No skills._
 | `grill-with-docs` | A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go.                                                                                                               |
 | `grilling`        | Grill the user relentlessly about a plan, decision, or idea. Use when the user wants to stress-test their thinking, or uses any 'grill' trigger phrases.                                                                 |
 | `log`             | Use when explicitly asked to journal or log the conversation (e.g. /log) — capture an immutable, timestamped entry via the noted MCP LogNote tool.                                                                       |
-
-### pr-review
-
-_No skills._
 
 ### session-findings
 

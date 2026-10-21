@@ -33,9 +33,9 @@
       "description": "Development agents"
     },
     {
-      "name": "pr-review",
-      "source": "./plugins/pr-review",
-      "description": "Review pull requests in a sandbox using local .md files (`${CLAUDE_PLUGIN_DATA}/standards`)"
+      "name": "bashkit-agents",
+      "source": "./plugins/bashkit-agents",
+      "description": "Review pull requests in a sandbox using local .md files (`$STANDARDS_DIR`, default `${CLAUDE_PLUGIN_DATA}/standards`)"
     }
   ]
 }

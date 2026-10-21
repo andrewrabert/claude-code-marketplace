@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__plugin_pr-review_pr-review__.*",
+        "matcher": "mcp__plugin_bashkit-agents_code-review__.*",
         "hooks": [
           {
             "type": "command",

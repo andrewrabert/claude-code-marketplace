@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "code-review": {
+      "type": "stdio",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/code-review.py",
+      "args": ["--mcp"]
+    }
+  }
+}

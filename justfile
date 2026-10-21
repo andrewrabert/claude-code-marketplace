@@ -37,13 +37,13 @@ pre-commit: check-plugin bump lint
 install: setup
     #!/bin/sh
     set -eu
-    config_dir="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
     src="{{justfile_directory()}}"
     manifest="${src}/.claude-plugin/marketplace.json"
     marketplace_name="$(jq -r '.name' "${manifest}")"
-    # Refresh the on-disk marketplace source; `claude plugin install` copies from
-    # here into the plugin cache, so the rsync must land before any install.
-    rsync -a --delete "${src}/" "${config_dir}/plugins/marketplaces/${marketplace_name}/"
+    # Register this checkout as a directory marketplace. A git-sourced marketplace
+    # re-syncs from its remote during install and loses unpushed plugins.
+    claude plugin marketplace remove "${marketplace_name}" >/dev/null 2>&1 || true
+    claude plugin marketplace add "${src}" --scope user
     # install is a no-op when a plugin is already installed and never refreshes the
     # cache from changed local source, so uninstall first to force a clean copy.
     jq -r '.plugins[].name' "${manifest}" | while read -r plugin; do

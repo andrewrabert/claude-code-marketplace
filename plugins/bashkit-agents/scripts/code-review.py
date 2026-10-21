@@ -11,9 +11,7 @@
 import argparse
 import asyncio
 import collections.abc
-import contextlib
 import datetime
-import fcntl
 import fnmatch
 import json
 import os
@@ -23,6 +21,7 @@ import secrets
 import shutil
 import signal
 import sys
+import tempfile
 import typing
 
 import bashkit
@@ -35,10 +34,8 @@ import yaml
 
 SCRIPT = pathlib.Path(__file__).resolve()
 
-TOKENS = "tokens"
 PREPARED = "prepared"
-REVIEWS = "reviews"
-SOURCE = "source.json"
+GIT_DIR = "repo.git"
 HEAD = "head"
 BASE = "base"
 DIFF = "diff.txt"
@@ -62,18 +59,20 @@ BUILD_ONLY_ENV = (
 )
 
 INSTRUCTIONS = (
-    "Sandbox for PR review. Call start_review with the token you were "
-    f"given; it mounts the head at {REVIEW_HEAD}, the base at "
+    "Sandbox for PR review. Call start_github_review for a pull request "
+    "or start_local_review for two revisions of a local git dir; it "
+    f"mounts the head at {REVIEW_HEAD}, the base at "
     f"{REVIEW_BASE}, and the full diff between them at {REVIEW_DIFF}. "
     f"{HOME_DIR} is read-only; {SCRATCH_DIR} is writable scratch space "
     "that never leaves the sandbox. The bash, read, write, and edit tools "
-    "work only between start_review and finish_review. "
+    "work only between the start and finish_review or cancel_review. "
     f"Standards files are in {STANDARDS_DIR}. List them with "
     "list_standards, read them with read_standard, and find them with "
-    "search_standards. read_standard without a path, after start_review, "
+    "search_standards. read_standard without a path, after the start, "
     "reads every standard that applies to the reviewed repo. Call "
     "record_violation once per violation, with path relative to head, then "
-    "finish_review."
+    "finish_review. Call cancel_review to end a review that cannot be "
+    "finished."
 )
 
 
@@ -123,13 +122,6 @@ class GithubSource(pydantic.BaseModel):
     def base_label(self) -> str:
         return f"merge base with {self.target}"
 
-    def standards_dir(self, root: pathlib.Path) -> pathlib.Path:
-        return (
-            root
-            / STANDARDS_REPOS
-            / check_segments((self.host, self.org, self.repo))
-        )
-
 
 class LocalSource(pydantic.BaseModel):
     kind: typing.Literal["local"] = "local"
@@ -142,17 +134,6 @@ class LocalSource(pydantic.BaseModel):
     def base_label(self) -> str:
         return self.base_rev
 
-    def standards_dir(self, root: pathlib.Path) -> pathlib.Path:
-        return root
-
-
-Source = typing.Annotated[
-    GithubSource | LocalSource, pydantic.Field(discriminator="kind")
-]
-SOURCE_ADAPTER: pydantic.TypeAdapter[GithubSource | LocalSource] = (
-    pydantic.TypeAdapter(Source)
-)
-
 
 class Violation(pydantic.BaseModel):
     rule: str
@@ -162,62 +143,14 @@ class Violation(pydantic.BaseModel):
 
 
 class ReviewResult(pydantic.BaseModel):
-    token: str
     session: str
     started: datetime.datetime
     finished: datetime.datetime
     violations: list[Violation]
 
 
-class Review(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(frozen=True)
-
-    token: str
-
-    def token_dir(self, tokens: pathlib.Path) -> pathlib.Path:
-        return tokens / check_segments((self.token,))
-
-    def prepared(self, tokens: pathlib.Path) -> pathlib.Path:
-        return self.token_dir(tokens) / PREPARED
-
-    def source(self, tokens: pathlib.Path) -> GithubSource | LocalSource:
-        try:
-            text = (self.token_dir(tokens) / SOURCE).read_text()
-        except FileNotFoundError:
-            raise UserError(f"unknown {self}")
-        return SOURCE_ADAPTER.validate_json(text)
-
-    def save(self, tokens: pathlib.Path, result: ReviewResult) -> None:
-        reviews = self.token_dir(tokens) / REVIEWS
-        reviews.mkdir(exist_ok=True)
-        name = result.finished.strftime("%Y%m%dT%H%M%S.%fZ") + ".json"
-        with (reviews / name).open("x") as f:
-            f.write(json_dumps(result.model_dump(mode="json")) + "\n")
-
-    def latest(self, tokens: pathlib.Path) -> ReviewResult:
-        paths = sorted((self.token_dir(tokens) / REVIEWS).glob("*.json"))
-        if not paths:
-            raise UserError(f"No finished review of {self}.")
-        return ReviewResult.model_validate_json(paths[-1].read_text())
-
-    def __str__(self) -> str:
-        return f"token {self.token}"
-
-
-@contextlib.contextmanager
-def locked(path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.with_name(path.name + ".lock").open("w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        yield
-
-
 def now():
     return datetime.datetime.now(datetime.UTC)
-
-
-def json_dumps(data):
-    return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
 
 
 def tool_specs():
@@ -259,32 +192,24 @@ def tool_specs():
         }
 
     return {
-        "prepare_github_review": tool(
-            "prepare-github-review",
-            "Prepare a review of a pull request: its head, its merge base "
-            "with the target branch, and the diff between them. Print a "
-            "token for start_review. The review is prepared now; later "
-            "pushes do not change it.",
+        "start_github_review": tool(
+            None,
+            "Start the review of a pull request: clone it, then mount its "
+            f"head at {REVIEW_HEAD}, its merge base with the target branch "
+            f"at {REVIEW_BASE}, and the diff between them at {REVIEW_DIFF}. "
+            "Fails while this session has a review in progress.",
             pr="Pull request number",
         ),
-        "prepare_local_review": tool(
-            "prepare-local-review",
-            "Prepare a review of two revisions of a git dir on the host, "
-            "then print a token for start_review. The review is prepared "
-            "now; later changes to the git dir do not change it.",
+        "start_local_review": tool(
+            None,
+            "Start the review of two revisions of a git dir on the host: "
+            f"mount the head at {REVIEW_HEAD}, the base at {REVIEW_BASE}, "
+            f"and the diff between them at {REVIEW_DIFF}. Fails while this "
+            "session has a review in progress.",
             repo=False,
             git_dir="Path of the git dir on the host",
             base="Revision to compare from",
             head="Revision to review",
-        ),
-        "start_review": tool(
-            None,
-            f"Start the review of a token: mount its head at {REVIEW_HEAD}, "
-            f"its base at {REVIEW_BASE}, and the diff between them at "
-            f"{REVIEW_DIFF}. Fails while this session has a review in "
-            "progress.",
-            repo=False,
-            token="Token from prepare_github_review or prepare_local_review",
         ),
         "record_violation": tool(
             None,
@@ -297,16 +222,22 @@ def tool_specs():
         ),
         "finish_review": tool(
             None,
-            "Finish the review: save it, then print it exactly as "
-            "read_review does. Ends the sandbox.",
+            "Finish the review: print a token for read_review. Ends the "
+            "sandbox and deletes the prepared files.",
+            repo=False,
+        ),
+        "cancel_review": tool(
+            None,
+            "Cancel the review: end the sandbox and delete the prepared "
+            "files without a token.",
             repo=False,
         ),
         "read_review": tool(
             None,
-            "Read the most recent finished review of a token: its metadata "
-            "as YAML front matter, then its violations grouped by file.",
+            "Read the finished review of a token: its metadata as YAML "
+            "front matter, then its violations grouped by file.",
             repo=False,
-            token="Token of the review",
+            token="Token from finish_review",
         ),
         "list_standards": tool(
             "list-standards",
@@ -324,7 +255,7 @@ def tool_specs():
         ),
         "read_standard": tool(
             "read-standard",
-            "Read standards. Without path, after start_review: every "
+            "Read standards. Without path, after the start: every "
             "standard that applies to the reviewed repo, concatenated with "
             "a '==> /path <==' header per file. For a pull request that is "
             f"every .md file in {STANDARDS_REPOS}/<host>/<org>/<repo> and in "
@@ -475,11 +406,12 @@ class Sandbox:
             bashkit.FileSystem.real(str(prepared), writable=False),
             read_only=True,
         )
-        self.bash.mount(
-            str(STANDARDS_DIR),
-            bashkit.FileSystem.real(str(standards), writable=False),
-            read_only=True,
-        )
+        if standards.is_dir():
+            self.bash.mount(
+                str(STANDARDS_DIR),
+                bashkit.FileSystem.real(str(standards), writable=False),
+                read_only=True,
+            )
         self.fs = self.bash.fs()
 
     async def start(self):
@@ -652,7 +584,6 @@ def host_tool_handler(spec, base=list):
         try:
             proc = await asyncio.create_subprocess_exec(
                 str(SCRIPT),
-                "--sandbox",
                 spec["command"],
                 *base(),
                 *argv,
@@ -687,28 +618,35 @@ def int_arg(arguments, name):
 class ActiveReview:
     def __init__(
         self,
-        review: Review,
         source: GithubSource | LocalSource,
+        tmpdir: tempfile.TemporaryDirectory,
         sandbox: Sandbox,
     ):
-        self.review = review
         self.source = source
+        self.tmpdir = tmpdir
         self.sandbox = sandbox
         self.started = now()
         self.violations: list[Violation] = []
 
+    @property
+    def prepared(self) -> pathlib.Path:
+        return pathlib.Path(self.tmpdir.name) / PREPARED
+
 
 class Session:
-    def __init__(self, session_id, tokens, standards):
+    def __init__(self, session_id, standards, reviews):
         self.session_id = session_id
-        self.tokens = tokens
         self.standards = standards
+        self.reviews = reviews
         self.lock = asyncio.Lock()
         self.active: ActiveReview | None = None
 
     def require_active(self) -> ActiveReview:
         if self.active is None:
-            raise UserError("No review in progress. Call start_review first.")
+            raise UserError(
+                "No review in progress. Call start_github_review or "
+                "start_local_review first."
+            )
         return self.active
 
     def sandbox_tool(self, method):
@@ -719,37 +657,80 @@ class Session:
 
     def host_tool(self, name, spec):
         match name:
-            case "start_review":
-                return self.start_review
+            case "start_github_review":
+                return self.start_github_review
+            case "start_local_review":
+                return self.start_local_review
             case "record_violation":
                 return self.record_violation
             case "finish_review":
                 return self.finish_review
+            case "cancel_review":
+                return self.cancel_review
             case "read_review":
                 return self.read_review
             case "read_standard":
-                return host_tool_handler(spec, self.standards_args)
+                return self.read_standard(
+                    host_tool_handler(spec, self.standards_args)
+                )
             case _:
                 return host_tool_handler(spec)
 
-    def standards_args(self):
-        if self.active is None:
-            return []
-        return [f"--token={self.active.review.token}"]
+    def read_standard(self, handler):
+        async def run(arguments):
+            if arguments.get("path") is None:
+                self.require_active()
+            return await handler(arguments)
 
-    async def start_review(self, arguments):
-        review = Review(token=string_arg(arguments, "token"))
+        return run
+
+    def standards_args(self):
+        match self.active:
+            case ActiveReview(source=GithubSource() as source):
+                return [
+                    f"--host={source.host}",
+                    f"--org={source.org}",
+                    f"--repo={source.repo}",
+                ]
+            case _:
+                return []
+
+    async def start_github_review(self, arguments):
+        host = string_arg(arguments, "host")
+        org = string_arg(arguments, "org")
+        repo = string_arg(arguments, "repo")
+        pr = int_arg(arguments, "pr")
+        check_segments((host, org, repo))
+        return await self.start(
+            lambda root: prepare_github_review(root, host, org, repo, pr)
+        )
+
+    async def start_local_review(self, arguments):
+        git_dir = pathlib.Path(string_arg(arguments, "git_dir"))
+        base = string_arg(arguments, "base")
+        head = string_arg(arguments, "head")
+        return await self.start(
+            lambda root: prepare_local_review(root, git_dir, base, head)
+        )
+
+    async def start(self, prepare):
         async with self.lock:
             if self.active is not None:
                 raise UserError(
-                    f"Review of {self.active.review} in progress. Call "
-                    "finish_review first."
+                    "Review in progress. Call finish_review or "
+                    "cancel_review first."
                 )
-            source = review.source(self.tokens)
-            sandbox = await Sandbox(
-                review.prepared(self.tokens), self.standards
-            ).start()
-            self.active = ActiveReview(review, source, sandbox)
+            tmpdir = tempfile.TemporaryDirectory(prefix="code-review-")
+            try:
+                root = pathlib.Path(tmpdir.name)
+                source = await prepare(root)
+                sandbox = await Sandbox(
+                    root / PREPARED, self.standards
+                ).start()
+            except BaseException:
+                tmpdir.cleanup()
+                raise
+            self.active = ActiveReview(source, tmpdir, sandbox)
         return text_result(
             "\n".join(
                 (
@@ -767,7 +748,7 @@ class Session:
         reason = string_arg(arguments, "reason")
         async with self.lock:
             active = self.require_active()
-            head = (active.review.prepared(self.tokens) / HEAD).resolve()
+            head = (active.prepared / HEAD).resolve()
             file = (head / path).resolve()
             if not file.is_relative_to(head) or not file.is_file():
                 raise UserError("path is not a file in head")
@@ -787,26 +768,41 @@ class Session:
         async with self.lock:
             active = self.require_active()
             result = ReviewResult(
-                token=active.review.token,
                 session=self.session_id,
                 started=active.started,
                 finished=now(),
                 violations=active.violations,
             )
-            active.review.save(self.tokens, result)
             self.active = None
-        return text_result(review_text(active.source, result))
+            active.tmpdir.cleanup()
+        token = secrets.token_urlsafe(16)
+        self.reviews[token] = review_text(active.source, result)
+        return text_result(token)
+
+    async def cancel_review(self, arguments):
+        async with self.lock:
+            active = self.require_active()
+            self.active = None
+            active.tmpdir.cleanup()
+        return text_result("Review cancelled.")
 
     async def read_review(self, arguments):
-        review = Review(token=string_arg(arguments, "token"))
-        source = review.source(self.tokens)
-        return text_result(review_text(source, review.latest(self.tokens)))
+        token = string_arg(arguments, "token")
+        try:
+            return text_result(self.reviews[token])
+        except KeyError:
+            raise UserError(f"unknown token {token}")
+
+    def close(self):
+        if self.active is not None:
+            self.active.tmpdir.cleanup()
+            self.active = None
 
 
 class Sessions:
-    def __init__(self, tokens, standards):
-        self.tokens = tokens
+    def __init__(self, standards):
         self.standards = standards
+        self.reviews: dict[str, str] = {}
         self.sessions = {}
         self.lock = asyncio.Lock()
 
@@ -816,7 +812,7 @@ class Sessions:
         async with self.lock:
             if session_id not in self.sessions:
                 self.sessions[session_id] = Session(
-                    session_id, self.tokens, self.standards
+                    session_id, self.standards, self.reviews
                 )
             return self.sessions[session_id]
 
@@ -827,6 +823,10 @@ class Sessions:
             return await make(session)(arguments)
 
         return handler
+
+    def close(self):
+        for session in self.sessions.values():
+            session.close()
 
 
 def guarded(handler):
@@ -951,8 +951,8 @@ def mcp_server(sessions):
 
 
 async def mcp(args):
-    args.standards.mkdir(parents=True, exist_ok=True)
-    server = mcp_server(Sessions(args.tokens, args.standards))
+    sessions = Sessions(args.standards)
+    server = mcp_server(sessions)
 
     task = asyncio.current_task()
     loop = asyncio.get_running_loop()
@@ -962,6 +962,8 @@ async def mcp(args):
         await server.run_async(transport="stdio", show_banner=False)
     except asyncio.CancelledError:
         pass
+    finally:
+        sessions.close()
     return 0
 
 
@@ -973,118 +975,92 @@ async def export(git_dir, rev, dest):
     await run("tar", "-x", "-f", "-", "-C", str(dest), input=archive)
 
 
-async def fetch(args):
-    name = f"{args.host}/{args.org}/{args.repo}"
-    git_dir = args.cache / args.host / args.org / f"{args.repo}.git"
-    with locked(git_dir):
-        if not git_dir.exists():
-            tmp = git_dir.with_name(git_dir.name + ".tmp")
-            shutil.rmtree(tmp, ignore_errors=True)
-            await run(
-                "gh",
-                "repo",
-                "clone",
-                name,
-                str(tmp),
-                "--",
-                "--bare",
-                "--quiet",
-            )
-            tmp.rename(git_dir)
-        target = (
-            await run(
-                "gh",
-                "pr",
-                "view",
-                str(args.pr),
-                "--repo",
-                name,
-                "--json",
-                "baseRefName",
-                "--jq",
-                ".baseRefName",
-            )
-        ).strip()
-        head_ref = f"refs/pr/{args.pr}/head"
-        target_ref = f"refs/pr/{args.pr}/target"
-        await git(
-            git_dir,
-            "fetch",
-            "--quiet",
-            "origin",
-            f"+refs/pull/{args.pr}/head:{head_ref}",
-            f"+refs/heads/{target}:{target_ref}",
-        )
-        head_sha, target_sha = (
-            await git(git_dir, "rev-parse", head_ref, target_ref)
-        ).split()
-        merge_base = (
-            await git(git_dir, "merge-base", head_sha, target_sha)
-        ).strip()
-    heads = {
-        "head_sha": head_sha,
-        "target": target,
-        "target_sha": target_sha,
-        "merge_base": merge_base,
-    }
-    return git_dir, heads
-
-
-async def prepare_review(
-    tokens: pathlib.Path,
-    git_dir: pathlib.Path,
-    base: str,
-    head: str,
-    source: GithubSource | LocalSource,
-) -> str:
-    token = secrets.token_urlsafe(16)
-    dest = tokens / token
-    tmp = dest.with_name(dest.name + ".tmp")
-    prepared = tmp / PREPARED
-    prepared.mkdir(parents=True)
-    try:
-        await export(git_dir, head, prepared / HEAD)
-        await export(git_dir, base, prepared / BASE)
-        diff = await git(
-            git_dir,
-            "diff",
-            "--no-color",
-            "--no-ext-diff",
-            base,
-            head,
-            text=False,
-        )
-        (prepared / DIFF).write_bytes(diff)
-        (tmp / SOURCE).write_text(
-            json_dumps(source.model_dump(mode="json")) + "\n"
-        )
-        tmp.rename(dest)
-    except BaseException:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise
-    return token
-
-
-async def cmd_prepare_github_review(args):
-    check_segments((args.host, args.org, args.repo))
-    git_dir, heads = await fetch(args)
-    source = GithubSource(
-        host=args.host, org=args.org, repo=args.repo, pr=args.pr, **heads
+async def fetch(git_dir, host, org, repo, pr):
+    name = f"{host}/{org}/{repo}"
+    await run(
+        "gh",
+        "repo",
+        "clone",
+        name,
+        str(git_dir),
+        "--",
+        "--bare",
+        "--quiet",
     )
-    print(
-        await prepare_review(
-            args.tokens,
-            git_dir,
-            heads["merge_base"],
-            heads["head_sha"],
-            source,
+    target = (
+        await run(
+            "gh",
+            "pr",
+            "view",
+            str(pr),
+            "--repo",
+            name,
+            "--json",
+            "baseRefName",
+            "--jq",
+            ".baseRefName",
         )
+    ).strip()
+    head_ref = f"refs/pr/{pr}/head"
+    target_ref = f"refs/pr/{pr}/target"
+    await git(
+        git_dir,
+        "fetch",
+        "--quiet",
+        "origin",
+        f"+refs/pull/{pr}/head:{head_ref}",
+        f"+refs/heads/{target}:{target_ref}",
     )
-    return 0
+    head_sha, target_sha = (
+        await git(git_dir, "rev-parse", head_ref, target_ref)
+    ).split()
+    merge_base = (
+        await git(git_dir, "merge-base", head_sha, target_sha)
+    ).strip()
+    return GithubSource(
+        host=host,
+        org=org,
+        repo=repo,
+        pr=pr,
+        head_sha=head_sha,
+        target=target,
+        target_sha=target_sha,
+        merge_base=merge_base,
+    )
 
 
-async def cmd_prepare_local_review(args):
-    git_dir = args.git_dir.resolve()
+async def export_review(
+    git_dir: pathlib.Path, base: str, head: str, prepared: pathlib.Path
+) -> None:
+    await export(git_dir, head, prepared / HEAD)
+    await export(git_dir, base, prepared / BASE)
+    diff = await git(
+        git_dir,
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+        base,
+        head,
+        text=False,
+    )
+    (prepared / DIFF).write_bytes(diff)
+
+
+async def prepare_github_review(
+    root: pathlib.Path, host: str, org: str, repo: str, pr: int
+) -> GithubSource:
+    git_dir = root / GIT_DIR
+    source = await fetch(git_dir, host, org, repo, pr)
+    await export_review(
+        git_dir, source.merge_base, source.head_sha, root / PREPARED
+    )
+    return source
+
+
+async def prepare_local_review(
+    root: pathlib.Path, git_dir: pathlib.Path, base: str, head: str
+) -> LocalSource:
+    git_dir = git_dir.resolve()
     base_commit, head_commit = [
         (
             await git(
@@ -1095,21 +1071,16 @@ async def cmd_prepare_local_review(args):
                 f"{rev}^{{commit}}",
             )
         ).strip()
-        for rev in (args.base, args.head)
+        for rev in (base, head)
     ]
-    source = LocalSource(
+    await export_review(git_dir, base_commit, head_commit, root / PREPARED)
+    return LocalSource(
         git_dir=git_dir,
-        base_rev=args.base,
-        head_rev=args.head,
+        base_rev=base,
+        head_rev=head,
         base_commit=base_commit,
         head_commit=head_commit,
     )
-    print(
-        await prepare_review(
-            args.tokens, git_dir, base_commit, head_commit, source
-        )
-    )
-    return 0
 
 
 def report(violations: list[Violation]) -> str:
@@ -1150,7 +1121,10 @@ def review_text(
 
 
 def standards_root(args):
-    return args.standards
+    root = args.standards
+    if not any(p.is_file() for p in root.rglob("*.md")):
+        raise UserError("no standards files")
+    return root
 
 
 def standards_files(args):
@@ -1185,13 +1159,11 @@ async def cmd_list_standards(args):
 
 def repo_standards(args):
     root = standards_root(args)
-    if args.review is None:
-        raise UserError(
-            "No review in progress. Call start_review first, or pass path."
-            if args.sandbox
-            else "Pass --token or --path."
+    directory = root
+    if args.host is not None:
+        directory /= STANDARDS_REPOS / check_segments(
+            (args.host, args.org, args.repo)
         )
-    directory = args.review.source(args.tokens).standards_dir(root)
     files = []
     while True:
         if directory.is_dir():
@@ -1297,45 +1269,7 @@ async def main():
         action="store_true",
         help="Serve the review tools as a bxwrp MCP on stdio over the data dir",
     )
-    parser.add_argument(
-        "--sandbox", action="store_true", help=argparse.SUPPRESS
-    )
     commands = parser.add_subparsers(dest="command")
-
-    prepare_github_review_parser = commands.add_parser(
-        "prepare-github-review",
-        help="Prepare a review of a pull request and print a token for "
-        "start-review",
-    )
-    prepare_github_review_parser.add_argument(
-        "--host", required=True, help="GitHub host"
-    )
-    prepare_github_review_parser.add_argument(
-        "--org",
-        required=True,
-        help="Organization or user that owns the repo",
-    )
-    prepare_github_review_parser.add_argument(
-        "--repo", required=True, help="Repository name"
-    )
-    prepare_github_review_parser.add_argument(
-        "--pr", required=True, type=int, help="Pull request number"
-    )
-
-    prepare_local_review_parser = commands.add_parser(
-        "prepare-local-review",
-        help="Prepare a review of two revisions of a git dir and print a "
-        "token for start-review",
-    )
-    prepare_local_review_parser.add_argument(
-        "--git-dir", required=True, type=pathlib.Path, help="Git dir"
-    )
-    prepare_local_review_parser.add_argument(
-        "--base", required=True, help="Revision to compare from"
-    )
-    prepare_local_review_parser.add_argument(
-        "--head", required=True, help="Revision to review"
-    )
 
     list_standards_parser = commands.add_parser(
         "list-standards",
@@ -1354,16 +1288,18 @@ async def main():
     read_standard_parser = commands.add_parser(
         "read-standard",
         help="Read a standards file by relative path, or every standard "
-        "for the token's repo",
+        "for a repo",
     )
+    read_standard_parser.add_argument("--host", help="GitHub host")
     read_standard_parser.add_argument(
-        "--token",
-        help="Token from prepare-github-review or prepare-local-review",
+        "--org", help="Organization or user that owns the repo"
     )
+    read_standard_parser.add_argument("--repo", help="Repository name")
     read_standard_parser.add_argument(
         "--path",
         type=pathlib.Path,
-        help="Relative path [default: every standard for the --token review]",
+        help="Relative path [default: every standard for --host, --org, "
+        "and --repo, or every standard in the top without them]",
     )
     read_standard_parser.add_argument(
         "--offset", default=0, type=int, help="First line, 0-based"
@@ -1401,22 +1337,21 @@ async def main():
     args = parser.parse_args()
     if args.mcp == (args.command is not None):
         parser.error("pass either --mcp or a command")
-    if "token" in vars(args):
-        args.review = None if args.token is None else Review(token=args.token)
-    data = os.environ.get("CLAUDE_PLUGIN_DATA")
-    if not data:
-        parser.error("CLAUDE_PLUGIN_DATA is not set")
-    data = pathlib.Path(data).resolve()
-    args.cache = data / "cache"
-    args.tokens = data / TOKENS
-    args.standards = data / STANDARDS
+    if args.command == "read-standard":
+        repo_args = (args.host, args.org, args.repo)
+        if any(a is not None for a in repo_args) and None in repo_args:
+            parser.error("pass --host, --org, and --repo together")
+    standards = os.environ.get("STANDARDS_DIR")
+    if standards:
+        args.standards = pathlib.Path(standards).resolve()
+    else:
+        data = os.environ.get("CLAUDE_PLUGIN_DATA")
+        if not data:
+            parser.error("set STANDARDS_DIR or CLAUDE_PLUGIN_DATA")
+        args.standards = pathlib.Path(data).resolve() / STANDARDS
     if args.mcp:
         return await mcp(args)
     match args.command:
-        case "prepare-github-review":
-            return await cmd_prepare_github_review(args)
-        case "prepare-local-review":
-            return await cmd_prepare_local_review(args)
         case "list-standards":
             return await cmd_list_standards(args)
         case "read-standard":
