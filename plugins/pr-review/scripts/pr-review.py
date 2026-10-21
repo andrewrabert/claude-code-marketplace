@@ -1,7 +1,12 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ['bashkit>=0.18.2,<0.19', 'fastmcp>=4,<5', 'pyyaml>=6,<7']
+# dependencies = [
+#     'bashkit>=0.18.2,<0.19',
+#     'fastmcp>=4,<5',
+#     'pydantic>=2,<3',
+#     'pyyaml>=6,<7',
+# ]
 # ///
 import argparse
 import asyncio
@@ -14,10 +19,10 @@ import json
 import os
 import pathlib
 import re
+import secrets
 import shutil
 import signal
 import sys
-import tempfile
 import typing
 
 import bashkit
@@ -30,29 +35,19 @@ import yaml
 
 SCRIPT = pathlib.Path(__file__).resolve()
 
-STANDARDS_COMMANDS = ("list-standards", "read-standard", "search-standards")
-REVIEW_COMMANDS = (
-    "start-review",
-    "record-violation",
-    "finish-review",
-    "read-review",
-)
-
-SESSIONS = "sessions"
-PRS = "prs"
+TOKENS = "tokens"
+PREPARED = "prepared"
+REVIEWS = "reviews"
+SOURCE = "source.json"
 HEAD = "head"
 BASE = "base"
 DIFF = "diff.txt"
-META = "meta.json"
-VIOLATIONS = "violations.jsonl"
-REPORT = "report.md"
 USERNAME = "agent"
 HOME_DIR = pathlib.PurePosixPath("/sandbox")
 SCRATCH_DIR = pathlib.PurePosixPath("/tmp")
-REVIEW_DIR = HOME_DIR / PRS / "<host>/<org>/<repo>/<pr>"
-REVIEW_HEAD = REVIEW_DIR / HEAD
-REVIEW_BASE = REVIEW_DIR / BASE
-REVIEW_DIFF = REVIEW_DIR / DIFF
+REVIEW_HEAD = HOME_DIR / HEAD
+REVIEW_BASE = HOME_DIR / BASE
+REVIEW_DIFF = HOME_DIR / DIFF
 STANDARDS = "standards"
 STANDARDS_DIR = HOME_DIR / STANDARDS
 STANDARDS_REPOS = "repos"
@@ -67,16 +62,18 @@ BUILD_ONLY_ENV = (
 )
 
 INSTRUCTIONS = (
-    f"Sandbox for PR review. {HOME_DIR} is read-only; {SCRATCH_DIR} is "
-    "writable scratch space that never leaves the sandbox. Call start_review "
-    "with the host, org, repo, and pr; it writes the pull request to "
-    f"{REVIEW_HEAD}, its merge base with the target branch to "
-    f"{REVIEW_BASE}, and the full diff between them to {REVIEW_DIFF}. "
+    "Sandbox for PR review. Call start_review with the token you were "
+    f"given; it mounts the head at {REVIEW_HEAD}, the base at "
+    f"{REVIEW_BASE}, and the full diff between them at {REVIEW_DIFF}. "
+    f"{HOME_DIR} is read-only; {SCRATCH_DIR} is writable scratch space "
+    "that never leaves the sandbox. The bash, read, write, and edit tools "
+    "work only between start_review and finish_review. "
     f"Standards files are in {STANDARDS_DIR}. List them with "
     "list_standards, read them with read_standard, and find them with "
     "search_standards. read_standard without a path, after start_review, "
-    "reads every standard that applies to the reviewed repo. Call record_violation once per violation, with path "
-    "relative to head, then finish_review."
+    "reads every standard that applies to the reviewed repo. Call "
+    "record_violation once per violation, with path relative to head, then "
+    "finish_review."
 )
 
 
@@ -112,15 +109,99 @@ def check_segments(parts):
     return pathlib.Path(*parts)
 
 
-def review_dir(state, host, org, repo, pr):
-    return state / PRS / check_segments((host, org, repo, str(pr)))
+class GithubSource(pydantic.BaseModel):
+    kind: typing.Literal["github"] = "github"
+    host: str
+    org: str
+    repo: str
+    pr: int
+    head_sha: str
+    target: str
+    target_sha: str
+    merge_base: str
+
+    def base_label(self) -> str:
+        return f"merge base with {self.target}"
+
+    def standards_dir(self, root: pathlib.Path) -> pathlib.Path:
+        return (
+            root
+            / STANDARDS_REPOS
+            / check_segments((self.host, self.org, self.repo))
+        )
 
 
-def session_dir(data, session_id):
-    # Flat, so a session's sandbox never sees its subagents' dirs
-    parts = session_id.split("/")
-    check_segments(parts)
-    return data / SESSIONS / "+".join(parts)
+class LocalSource(pydantic.BaseModel):
+    kind: typing.Literal["local"] = "local"
+    git_dir: pathlib.Path
+    base_rev: str
+    head_rev: str
+    base_commit: str
+    head_commit: str
+
+    def base_label(self) -> str:
+        return self.base_rev
+
+    def standards_dir(self, root: pathlib.Path) -> pathlib.Path:
+        return root
+
+
+Source = typing.Annotated[
+    GithubSource | LocalSource, pydantic.Field(discriminator="kind")
+]
+SOURCE_ADAPTER: pydantic.TypeAdapter[GithubSource | LocalSource] = (
+    pydantic.TypeAdapter(Source)
+)
+
+
+class Violation(pydantic.BaseModel):
+    rule: str
+    path: str
+    line: int
+    reason: str
+
+
+class ReviewResult(pydantic.BaseModel):
+    token: str
+    session: str
+    started: datetime.datetime
+    finished: datetime.datetime
+    violations: list[Violation]
+
+
+class Review(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(frozen=True)
+
+    token: str
+
+    def token_dir(self, tokens: pathlib.Path) -> pathlib.Path:
+        return tokens / check_segments((self.token,))
+
+    def prepared(self, tokens: pathlib.Path) -> pathlib.Path:
+        return self.token_dir(tokens) / PREPARED
+
+    def source(self, tokens: pathlib.Path) -> GithubSource | LocalSource:
+        try:
+            text = (self.token_dir(tokens) / SOURCE).read_text()
+        except FileNotFoundError:
+            raise UserError(f"unknown {self}")
+        return SOURCE_ADAPTER.validate_json(text)
+
+    def save(self, tokens: pathlib.Path, result: ReviewResult) -> None:
+        reviews = self.token_dir(tokens) / REVIEWS
+        reviews.mkdir(exist_ok=True)
+        name = result.finished.strftime("%Y%m%dT%H%M%S.%fZ") + ".json"
+        with (reviews / name).open("x") as f:
+            f.write(json_dumps(result.model_dump(mode="json")) + "\n")
+
+    def latest(self, tokens: pathlib.Path) -> ReviewResult:
+        paths = sorted((self.token_dir(tokens) / REVIEWS).glob("*.json"))
+        if not paths:
+            raise UserError(f"No finished review of {self}.")
+        return ReviewResult.model_validate_json(paths[-1].read_text())
+
+    def __str__(self) -> str:
+        return f"token {self.token}"
 
 
 @contextlib.contextmanager
@@ -132,43 +213,11 @@ def locked(path):
 
 
 def now():
-    return datetime.datetime.now(datetime.UTC).isoformat()
-
-
-def read_meta(review):
-    try:
-        return json.loads((review / META).read_text())
-    except FileNotFoundError:
-        return None
-
-
-def safe_write_bytes(path, data):
-    stat = path.stat() if path.exists() else None
-    with tempfile.NamedTemporaryFile(delete=False, dir=path.parent) as handle:
-        temp_path = pathlib.Path(handle.name)
-        try:
-            temp_path.write_bytes(data)
-            if stat:
-                for ids in ((stat.st_uid, -1), (-1, stat.st_gid)):
-                    try:
-                        os.chown(temp_path, *ids)
-                    except PermissionError:
-                        pass
-                temp_path.chmod(stat.st_mode)
-            temp_path.replace(path)
-        finally:
-            try:
-                temp_path.unlink()
-            except FileNotFoundError:
-                pass
+    return datetime.datetime.now(datetime.UTC)
 
 
 def json_dumps(data):
     return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
-
-
-def write_meta(review, meta):
-    safe_write_bytes(review / META, (json_dumps(meta) + "\n").encode())
 
 
 def tool_specs():
@@ -197,7 +246,7 @@ def tool_specs():
                 **{
                     name: {
                         "description": text,
-                        "args": [f"--{name}={{{{value}}}}"],
+                        "args": [f"--{name.replace('_', '-')}={{{{value}}}}"],
                     }
                     for name, text in extra_args.items()
                 },
@@ -210,16 +259,35 @@ def tool_specs():
         }
 
     return {
-        "start_review": tool(
-            "start-review",
-            f"Start a review: write a pull request to {REVIEW_HEAD}, its "
-            f"merge base with the target branch to {REVIEW_BASE}, and the "
-            f"diff between them to {REVIEW_DIFF}. Clears any earlier review "
-            "of the pull request.",
+        "prepare_github_review": tool(
+            "prepare-github-review",
+            "Prepare a review of a pull request: its head, its merge base "
+            "with the target branch, and the diff between them. Print a "
+            "token for start_review. The review is prepared now; later "
+            "pushes do not change it.",
             pr="Pull request number",
         ),
+        "prepare_local_review": tool(
+            "prepare-local-review",
+            "Prepare a review of two revisions of a git dir on the host, "
+            "then print a token for start_review. The review is prepared "
+            "now; later changes to the git dir do not change it.",
+            repo=False,
+            git_dir="Path of the git dir on the host",
+            base="Revision to compare from",
+            head="Revision to review",
+        ),
+        "start_review": tool(
+            None,
+            f"Start the review of a token: mount its head at {REVIEW_HEAD}, "
+            f"its base at {REVIEW_BASE}, and the diff between them at "
+            f"{REVIEW_DIFF}. Fails while this session has a review in "
+            "progress.",
+            repo=False,
+            token="Token from prepare_github_review or prepare_local_review",
+        ),
         "record_violation": tool(
-            "record-violation",
+            None,
             "Record one rule violation in the started review's head",
             repo=False,
             rule="Name of the rule the code breaks",
@@ -228,17 +296,17 @@ def tool_specs():
             reason="One sentence on how the code breaks the rule",
         ),
         "finish_review": tool(
-            "finish-review",
-            "Finish the review: save the report from the recorded "
-            "violations, then print it exactly as read_review does.",
+            None,
+            "Finish the review: save it, then print it exactly as "
+            "read_review does. Ends the sandbox.",
             repo=False,
         ),
         "read_review": tool(
-            "read-review",
-            "Read a review: its metadata as YAML front matter, then its "
-            "violations grouped by file. A review in progress shows the "
-            "violations recorded so far.",
-            pr="Pull request number",
+            None,
+            "Read the most recent finished review of a token: its metadata "
+            "as YAML front matter, then its violations grouped by file.",
+            repo=False,
+            token="Token of the review",
         ),
         "list_standards": tool(
             "list-standards",
@@ -257,10 +325,11 @@ def tool_specs():
         "read_standard": tool(
             "read-standard",
             "Read standards. Without path, after start_review: every "
-            "standard that applies to the reviewed repo, which is every .md "
-            f"file in {STANDARDS_REPOS}/<host>/<org>/<repo> and in each "
-            "parent directory up to and including the top, concatenated "
-            "with a '==> /path <==' header per file. That result is "
+            "standard that applies to the reviewed repo, concatenated with "
+            "a '==> /path <==' header per file. For a pull request that is "
+            f"every .md file in {STANDARDS_REPOS}/<host>/<org>/<repo> and in "
+            "each parent directory up to and including the top; for a local "
+            "review, every .md file in the top only. That result is "
             "complete; do not read its files again by path. With path: one "
             "standards file by relative path. Use offset/limit to page.",
             repo=False,
@@ -390,7 +459,7 @@ def text_lines(text):
 
 
 class Sandbox:
-    def __init__(self, state, standards):
+    def __init__(self, prepared, standards):
         self.lock = asyncio.Lock()
         self.bash = bashkit.Bash(
             username=USERNAME,
@@ -403,7 +472,7 @@ class Sandbox:
         )
         self.bash.mount(
             str(HOME_DIR),
-            bashkit.FileSystem.real(str(state), writable=False),
+            bashkit.FileSystem.real(str(prepared), writable=False),
             read_only=True,
         )
         self.bash.mount(
@@ -577,18 +646,13 @@ def host_tool_argv(spec, arguments):
     return argv
 
 
-def pr_args(host, org, repo, pr):
-    return [f"--host={host}", f"--org={org}", f"--repo={repo}", f"--pr={pr}"]
-
-
-def host_tool_handler(spec, session_id, base=list):
+def host_tool_handler(spec, base=list):
     async def handler(arguments):
         argv = host_tool_argv(spec, arguments)
         try:
             proc = await asyncio.create_subprocess_exec(
                 str(SCRIPT),
                 "--sandbox",
-                f"--session={session_id}",
                 spec["command"],
                 *base(),
                 *argv,
@@ -610,82 +674,138 @@ def host_tool_handler(spec, session_id, base=list):
     return handler
 
 
-class Session:
-    def __init__(self, session_id, state, sandbox):
-        self.session_id = session_id
-        self.state = state
+def int_arg(arguments, name):
+    value = scalar(name, arguments.get(name))
+    try:
+        return int(value)
+    except ValueError:
+        raise UserError(
+            f"{name}: expected an integer, got {json.dumps(value)}"
+        )
+
+
+class ActiveReview:
+    def __init__(
+        self,
+        review: Review,
+        source: GithubSource | LocalSource,
+        sandbox: Sandbox,
+    ):
+        self.review = review
+        self.source = source
         self.sandbox = sandbox
-        self.review = None
+        self.started = now()
+        self.violations: list[Violation] = []
+
+
+class Session:
+    def __init__(self, session_id, tokens, standards):
+        self.session_id = session_id
+        self.tokens = tokens
+        self.standards = standards
+        self.lock = asyncio.Lock()
+        self.active: ActiveReview | None = None
+
+    def require_active(self) -> ActiveReview:
+        if self.active is None:
+            raise UserError("No review in progress. Call start_review first.")
+        return self.active
 
     def sandbox_tool(self, method):
         async def handler(arguments):
-            return await method(self.sandbox, arguments)
+            return await method(self.require_active().sandbox, arguments)
 
         return handler
 
-    def host_tool(self, spec):
-        command = spec["command"]
-        match command:
-            case "start-review":
-                return self.start_review(spec)
-            case "finish-review":
-                return self.finish_review(spec)
-            case "read-standard":
-                base = lambda: (
-                    [] if self.review is None else pr_args(*self.review)
-                )
-            case "read-review":
-                base = list
-            case _ if command in STANDARDS_COMMANDS:
-                base = list
+    def host_tool(self, name, spec):
+        match name:
+            case "start_review":
+                return self.start_review
+            case "record_violation":
+                return self.record_violation
+            case "finish_review":
+                return self.finish_review
+            case "read_review":
+                return self.read_review
+            case "read_standard":
+                return host_tool_handler(spec, self.standards_args)
             case _:
-                base = self.review_args
-        return host_tool_handler(spec, self.session_id, base)
+                return host_tool_handler(spec)
 
-    def review_args(self):
-        if self.review is None:
-            raise UserError("No review in progress. Call start_review first.")
-        return pr_args(*self.review)
+    def standards_args(self):
+        if self.active is None:
+            return []
+        return [f"--token={self.active.review.token}"]
 
-    def start_review(self, spec):
-        async def handler(arguments):
-            pr = scalar("pr", arguments.get("pr"))
-            try:
-                pr = int(pr)
-            except ValueError:
+    async def start_review(self, arguments):
+        review = Review(token=string_arg(arguments, "token"))
+        async with self.lock:
+            if self.active is not None:
                 raise UserError(
-                    f"pr: expected an integer, got {json.dumps(pr)}"
+                    f"Review of {self.active.review} in progress. Call "
+                    "finish_review first."
                 )
-            review = (
-                string_arg(arguments, "host"),
-                string_arg(arguments, "org"),
-                string_arg(arguments, "repo"),
-                pr,
+            source = review.source(self.tokens)
+            sandbox = await Sandbox(
+                review.prepared(self.tokens), self.standards
+            ).start()
+            self.active = ActiveReview(review, source, sandbox)
+        return text_result(
+            "\n".join(
+                (
+                    str(REVIEW_HEAD),
+                    f"{REVIEW_BASE} ({source.base_label()})",
+                    str(REVIEW_DIFF),
+                )
             )
-            review_dir(self.state, *review)
-            result = await host_tool_handler(spec, self.session_id)(arguments)
-            if not result.is_error:
-                self.review = review
-            return result
+        )
 
-        return handler
+    async def record_violation(self, arguments):
+        rule = string_arg(arguments, "rule")
+        path = string_arg(arguments, "path")
+        line = int_arg(arguments, "line")
+        reason = string_arg(arguments, "reason")
+        async with self.lock:
+            active = self.require_active()
+            head = (active.review.prepared(self.tokens) / HEAD).resolve()
+            file = (head / path).resolve()
+            if not file.is_relative_to(head) or not file.is_file():
+                raise UserError("path is not a file in head")
+            lines = len(file.read_text(errors="replace").splitlines())
+            if not 1 <= line <= lines:
+                raise UserError(f"line {line} is not in 1..{lines} of {path}")
+            violation = Violation(
+                rule=rule,
+                path=str(file.relative_to(head)),
+                line=line,
+                reason=reason,
+            )
+            active.violations.append(violation)
+        return text_result(f"Recorded {violation.path}:{violation.line}")
 
-    def finish_review(self, spec):
-        async def handler(arguments):
-            review = self.review
-            result = await host_tool_handler(
-                spec, self.session_id, self.review_args
-            )(arguments)
-            if self.review is review:
-                self.review = None
-            return result
+    async def finish_review(self, arguments):
+        async with self.lock:
+            active = self.require_active()
+            result = ReviewResult(
+                token=active.review.token,
+                session=self.session_id,
+                started=active.started,
+                finished=now(),
+                violations=active.violations,
+            )
+            active.review.save(self.tokens, result)
+            self.active = None
+        return text_result(review_text(active.source, result))
 
-        return handler
+    async def read_review(self, arguments):
+        review = Review(token=string_arg(arguments, "token"))
+        source = review.source(self.tokens)
+        return text_result(review_text(source, review.latest(self.tokens)))
 
 
 class Sessions:
-    def __init__(self, data, standards):
-        self.data = data
+    def __init__(self, tokens, standards):
+        self.tokens = tokens
         self.standards = standards
         self.sessions = {}
         self.lock = asyncio.Lock()
@@ -695,10 +815,9 @@ class Sessions:
             raise UserError("missing session_id")
         async with self.lock:
             if session_id not in self.sessions:
-                state = session_dir(self.data, session_id)
-                (state / PRS).mkdir(parents=True, exist_ok=True)
-                sandbox = await Sandbox(state, self.standards).start()
-                self.sessions[session_id] = Session(session_id, state, sandbox)
+                self.sessions[session_id] = Session(
+                    session_id, self.tokens, self.standards
+                )
             return self.sessions[session_id]
 
     def tool(self, make):
@@ -815,7 +934,9 @@ def mcp_server(sessions):
                 description=spec["description"],
                 parameters=host_tool_schema(spec),
                 handler=guarded(
-                    sessions.tool(lambda s, spec=spec: s.host_tool(spec))
+                    sessions.tool(
+                        lambda s, name=name, spec=spec: s.host_tool(name, spec)
+                    )
                 ),
             )
             for name, spec in tool_specs().items()
@@ -831,7 +952,7 @@ def mcp_server(sessions):
 
 async def mcp(args):
     args.standards.mkdir(parents=True, exist_ok=True)
-    server = mcp_server(Sessions(args.data, args.standards))
+    server = mcp_server(Sessions(args.tokens, args.standards))
 
     task = asyncio.current_task()
     loop = asyncio.get_running_loop()
@@ -909,145 +1030,123 @@ async def fetch(args):
     return git_dir, heads
 
 
-async def cmd_start_review(args):
-    review = review_dir(args.state, args.host, args.org, args.repo, args.pr)
-    with locked(review):
-        git_dir, heads = await fetch(args)
-        old = read_meta(review) or {}
-        if all(old.get(k) == v for k, v in heads.items()):
-            for name in (VIOLATIONS, REPORT):
-                (review / name).unlink(missing_ok=True)
-            dest = review
-        else:
-            dest = review.with_name(review.name + ".tmp")
-            shutil.rmtree(dest, ignore_errors=True)
-            dest.mkdir()
-            await export(git_dir, heads["head_sha"], dest / HEAD)
-            await export(git_dir, heads["merge_base"], dest / BASE)
-            diff = await git(
-                git_dir,
-                "diff",
-                "--no-color",
-                "--no-ext-diff",
-                heads["merge_base"],
-                heads["head_sha"],
-                text=False,
-            )
-            (dest / DIFF).write_bytes(diff)
-        write_meta(
-            dest,
-            {
-                **heads,
-                "status": "in_progress",
-                "started": now(),
-                "finished": None,
-            },
-        )
-        if dest != review:
-            shutil.rmtree(review, ignore_errors=True)
-            dest.rename(review)
-    if args.sandbox:
-        review = HOME_DIR / review.relative_to(args.state)
-    print(review / HEAD)
-    print(f"{review / BASE} (merge base with {heads['target']})")
-    print(review / DIFF)
-    return 0
-
-
-def started_review(args):
-    review = review_dir(args.state, args.host, args.org, args.repo, args.pr)
-    if read_meta(review) is None:
-        raise UserError(
-            f"No review of {args.host}/{args.org}/{args.repo} pull request "
-            f"{args.pr}. Run start-review first."
-        )
-    return review
-
-
-async def cmd_record_violation(args):
-    review = started_review(args)
-    repo = (review / HEAD).resolve()
-    path = (repo / args.path).resolve()
-    if not path.is_relative_to(repo) or not path.is_file():
-        raise UserError("path is not a file in head")
-    lines = len(path.read_text(errors="replace").splitlines())
-    if not 1 <= args.line <= lines:
-        raise UserError(
-            f"line {args.line} is not in 1..{lines} of {args.path}"
-        )
-    record = {
-        "rule": args.rule,
-        "path": str(path.relative_to(repo)),
-        "line": args.line,
-        "reason": args.reason,
-    }
-    with locked(review), (review / VIOLATIONS).open("a") as f:
-        f.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
-    print(f"Recorded {record['path']}:{record['line']}")
-    return 0
-
-
-def read_violations(review):
+async def prepare_review(
+    tokens: pathlib.Path,
+    git_dir: pathlib.Path,
+    base: str,
+    head: str,
+    source: GithubSource | LocalSource,
+) -> str:
+    token = secrets.token_urlsafe(16)
+    dest = tokens / token
+    tmp = dest.with_name(dest.name + ".tmp")
+    prepared = tmp / PREPARED
+    prepared.mkdir(parents=True)
     try:
-        text = (review / VIOLATIONS).read_text()
-    except FileNotFoundError:
-        text = ""
-    return [json.loads(line) for line in text.splitlines()]
+        await export(git_dir, head, prepared / HEAD)
+        await export(git_dir, base, prepared / BASE)
+        diff = await git(
+            git_dir,
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            base,
+            head,
+            text=False,
+        )
+        (prepared / DIFF).write_bytes(diff)
+        (tmp / SOURCE).write_text(
+            json_dumps(source.model_dump(mode="json")) + "\n"
+        )
+        tmp.rename(dest)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    return token
 
 
-def report(records):
-    if not records:
+async def cmd_prepare_github_review(args):
+    check_segments((args.host, args.org, args.repo))
+    git_dir, heads = await fetch(args)
+    source = GithubSource(
+        host=args.host, org=args.org, repo=args.repo, pr=args.pr, **heads
+    )
+    print(
+        await prepare_review(
+            args.tokens,
+            git_dir,
+            heads["merge_base"],
+            heads["head_sha"],
+            source,
+        )
+    )
+    return 0
+
+
+async def cmd_prepare_local_review(args):
+    git_dir = args.git_dir.resolve()
+    base_commit, head_commit = [
+        (
+            await git(
+                git_dir,
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                f"{rev}^{{commit}}",
+            )
+        ).strip()
+        for rev in (args.base, args.head)
+    ]
+    source = LocalSource(
+        git_dir=git_dir,
+        base_rev=args.base,
+        head_rev=args.head,
+        base_commit=base_commit,
+        head_commit=head_commit,
+    )
+    print(
+        await prepare_review(
+            args.tokens, git_dir, base_commit, head_commit, source
+        )
+    )
+    return 0
+
+
+def report(violations: list[Violation]) -> str:
+    if not violations:
         return "No violations."
-    by_path = {}
-    for r in sorted(records, key=lambda r: (r["path"], r["line"])):
-        by_path.setdefault(r["path"], []).append(r)
+    by_path: dict[str, list[Violation]] = {}
+    for v in sorted(violations, key=lambda v: (v.path, v.line)):
+        by_path.setdefault(v.path, []).append(v)
     blocks = []
-    for path, rs in by_path.items():
+    for path, vs in by_path.items():
         lines = [f"**{path}**"]
-        for r in rs:
-            lines.append(f"- line {r['line']}: {r['rule']}")
-            lines.append(f"  - {r['reason']}")
+        for v in vs:
+            lines.append(f"- line {v.line}: {v.rule}")
+            lines.append(f"  - {v.reason}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
 
 
-async def cmd_finish_review(args):
-    review = started_review(args)
-    with locked(review):
-        text = report(read_violations(review))
-        safe_write_bytes(review / REPORT, (text + "\n").encode())
-        meta = read_meta(review)
-        write_meta(review, {**meta, "status": "done", "finished": now()})
-    print_review(args, review)
-    return 0
-
-
-async def cmd_read_review(args):
-    print_review(args, started_review(args))
-    return 0
-
-
-def print_review(args, review):
-    with locked(review):
-        meta = read_meta(review)
-        records = read_violations(review)
-    head = review / HEAD
-    if args.sandbox:
-        head = HOME_DIR / head.relative_to(args.state)
+def review_text(
+    source: GithubSource | LocalSource, result: ReviewResult
+) -> str:
     front = {
-        **meta,
-        "host": args.host,
-        "org": args.org,
-        "repo": args.repo,
-        "pr": args.pr,
-        "head": str(head),
-        "violations": len(records),
+        **source.model_dump(mode="json"),
+        **result.model_dump(mode="json", exclude={"violations"}),
+        "violations": len(result.violations),
     }
-    print("---")
-    print(yaml.safe_dump(front, allow_unicode=True, sort_keys=True), end="")
-    print("---")
-    print()
-    print(report(records))
+    return "\n".join(
+        (
+            "---",
+            yaml.safe_dump(front, allow_unicode=True, sort_keys=True).rstrip(
+                "\n"
+            ),
+            "---",
+            "",
+            report(result.violations),
+        )
+    )
 
 
 def standards_root(args):
@@ -1086,18 +1185,14 @@ async def cmd_list_standards(args):
 
 def repo_standards(args):
     root = standards_root(args)
-    if None in (args.host, args.org, args.repo, args.pr):
+    if args.review is None:
         raise UserError(
             "No review in progress. Call start_review first, or pass path."
             if args.sandbox
-            else "Pass --host, --org, --repo, and --pr, or --path."
+            else "Pass --token or --path."
         )
+    directory = args.review.source(args.tokens).standards_dir(root)
     files = []
-    directory = (
-        root
-        / STANDARDS_REPOS
-        / check_segments((args.host, args.org, args.repo))
-    )
     while True:
         if directory.is_dir():
             files.extend(
@@ -1195,76 +1290,51 @@ async def cmd_search_standards(args):
     return 0
 
 
-def pr_parser(required):
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--host", required=required, help="GitHub host")
-    parser.add_argument(
-        "--org",
-        required=required,
-        help="Organization or user that owns the repo",
-    )
-    parser.add_argument("--repo", required=required, help="Repository name")
-    parser.add_argument(
-        "--pr", required=required, type=int, help="Pull request number"
-    )
-    return parser
-
-
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mcp",
         action="store_true",
-        help="Serve the review tools as a bxwrp MCP on stdio over the state dir",
+        help="Serve the review tools as a bxwrp MCP on stdio over the data dir",
     )
     parser.add_argument(
         "--sandbox", action="store_true", help=argparse.SUPPRESS
     )
-    parser.add_argument(
-        "--session",
-        help="Session ID, as <session> or <session>/<agent>, whose state "
-        "dir holds the pull requests",
-    )
     commands = parser.add_subparsers(dest="command")
 
-    review = pr_parser(required=True)
-
-    commands.add_parser(
+    prepare_github_review_parser = commands.add_parser(
+        "prepare-github-review",
+        help="Prepare a review of a pull request and print a token for "
         "start-review",
-        parents=[review],
-        help="Write a pull request, its merge base, and their diff, and "
-        "clear any earlier review of it",
+    )
+    prepare_github_review_parser.add_argument(
+        "--host", required=True, help="GitHub host"
+    )
+    prepare_github_review_parser.add_argument(
+        "--org",
+        required=True,
+        help="Organization or user that owns the repo",
+    )
+    prepare_github_review_parser.add_argument(
+        "--repo", required=True, help="Repository name"
+    )
+    prepare_github_review_parser.add_argument(
+        "--pr", required=True, type=int, help="Pull request number"
     )
 
-    record_violation_parser = commands.add_parser(
-        "record-violation",
-        parents=[review],
-        help="Record one rule violation in the review's head",
+    prepare_local_review_parser = commands.add_parser(
+        "prepare-local-review",
+        help="Prepare a review of two revisions of a git dir and print a "
+        "token for start-review",
     )
-    record_violation_parser.add_argument(
-        "--rule", required=True, help="Rule name"
+    prepare_local_review_parser.add_argument(
+        "--git-dir", required=True, type=pathlib.Path, help="Git dir"
     )
-    record_violation_parser.add_argument(
-        "--path", required=True, help="File path relative to head"
+    prepare_local_review_parser.add_argument(
+        "--base", required=True, help="Revision to compare from"
     )
-    record_violation_parser.add_argument(
-        "--line", required=True, type=int, help="Line number"
-    )
-    record_violation_parser.add_argument(
-        "--reason", required=True, help="How the code breaks the rule"
-    )
-
-    commands.add_parser(
-        "finish-review",
-        parents=[review],
-        help="Save the review report from the recorded violations",
-    )
-
-    commands.add_parser(
-        "read-review",
-        parents=[review],
-        help="Print a review's metadata as YAML front matter and its "
-        "violations",
+    prepare_local_review_parser.add_argument(
+        "--head", required=True, help="Revision to review"
     )
 
     list_standards_parser = commands.add_parser(
@@ -1283,15 +1353,17 @@ async def main():
 
     read_standard_parser = commands.add_parser(
         "read-standard",
-        parents=[pr_parser(required=False)],
         help="Read a standards file by relative path, or every standard "
-        "for the pull request's repo",
+        "for the token's repo",
+    )
+    read_standard_parser.add_argument(
+        "--token",
+        help="Token from prepare-github-review or prepare-local-review",
     )
     read_standard_parser.add_argument(
         "--path",
         type=pathlib.Path,
-        help="Relative path [default: every standard for the --host/--org/--repo "
-        "pull request]",
+        help="Relative path [default: every standard for the --token review]",
     )
     read_standard_parser.add_argument(
         "--offset", default=0, type=int, help="First line, 0-based"
@@ -1329,31 +1401,22 @@ async def main():
     args = parser.parse_args()
     if args.mcp == (args.command is not None):
         parser.error("pass either --mcp or a command")
+    if "token" in vars(args):
+        args.review = None if args.token is None else Review(token=args.token)
     data = os.environ.get("CLAUDE_PLUGIN_DATA")
     if not data:
         parser.error("CLAUDE_PLUGIN_DATA is not set")
     data = pathlib.Path(data).resolve()
-    args.data = data
-    if args.session is not None:
-        try:
-            args.state = session_dir(data, args.session)
-        except UserError as e:
-            parser.error(f"--session: {e}")
-    elif args.command in REVIEW_COMMANDS:
-        parser.error(f"{args.command} requires --session")
     args.cache = data / "cache"
+    args.tokens = data / TOKENS
     args.standards = data / STANDARDS
     if args.mcp:
         return await mcp(args)
     match args.command:
-        case "start-review":
-            return await cmd_start_review(args)
-        case "record-violation":
-            return await cmd_record_violation(args)
-        case "finish-review":
-            return await cmd_finish_review(args)
-        case "read-review":
-            return await cmd_read_review(args)
+        case "prepare-github-review":
+            return await cmd_prepare_github_review(args)
+        case "prepare-local-review":
+            return await cmd_prepare_local_review(args)
         case "list-standards":
             return await cmd_list_standards(args)
         case "read-standard":
