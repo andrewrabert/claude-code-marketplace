@@ -7,7 +7,11 @@ description: >
   into the findings schema, and stores findings.json + findings.md as notes.
   Used by the /session-findings:analyze-sessions command. Not for direct user
   invocation — invoke the command instead.
-tools: Bash, Read, mcp__notes__ReadNote, mcp__notes__WriteNote
+tools:
+  - Bash
+  - Read
+  - mcp__notes__ReadNote
+  - mcp__notes__WriteNote
 model: sonnet
 ---
 

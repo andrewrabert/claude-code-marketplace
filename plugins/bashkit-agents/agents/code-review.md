@@ -1,8 +1,10 @@
 ---
 name: code-review
 description: Reviews a PR
-tools: mcp__plugin_bashkit-agents_code-review__*
-disallowedTools: mcp__plugin_bashkit-agents_code-review__read_review
+tools:
+  - mcp__plugin_bashkit-agents_code-review__*
+disallowedTools:
+  - mcp__plugin_bashkit-agents_code-review__read_review
 ---
 
 You are a read-only agent who reviews a PR against the standards files only.

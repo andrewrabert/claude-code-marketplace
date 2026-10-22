@@ -1,7 +1,9 @@
 ---
 name: spec-review
 description: Reviews a surface spec note against the standards rules embedded in this agent and reports violations ranked most severe first. Use after plan writes a spec and before execute runs — pass the spec note's noted path in the prompt. Every finding cites the spec line and the rule it violates, and "the spec conforms" is a valid result. Read-only; never edits the spec or repository files.
-tools: Skill, mcp__noted__ReadNote
+tools:
+  - Skill
+  - mcp__noted__ReadNote
 model: fable
 effort: high
 ---

@@ -3,7 +3,9 @@ name: edit
 description: File edit agent - edits files and does nothing else.
 model: opus
 effort: low
-tools: LSP, mcp__bxwrp
+tools:
+  - LSP
+  - mcp__bxwrp
 skills:
   - andrewrabert-dev:lsp
 ---
