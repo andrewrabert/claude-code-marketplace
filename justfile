@@ -1,11 +1,10 @@
-[private]
-list: setup
-    @just --list
+set default-list := true
 
 # Write the generated files, or with --pre-commit only check them
 [private]
+[positional-arguments]
 generate *flags:
-    "{{justfile_directory()}}/dev/marketplace.py" render-readme {{flags}}
+    "{{justfile_directory()}}/dev/marketplace.py" render-readme "$@"
 
 # Validate the marketplace, plugins, and generated files
 lint: setup (generate "--pre-commit")
@@ -23,34 +22,27 @@ new-plugin name description: setup
     "{{justfile_directory()}}/dev/marketplace.py" new-plugin "{{name}}" "{{description}}"
 
 # Normalize plugin manifests to the canonical shape
+[positional-arguments]
 check-plugin *names: setup
-    "{{justfile_directory()}}/dev/marketplace.py" check-plugin {{names}}
+    "{{justfile_directory()}}/dev/marketplace.py" check-plugin "$@"
 
 # Launch Claude to improve the named skills with the skill-creator skill
+[positional-arguments]
 improve *skills: setup
-    claude "Use the skill-creator skill to improve these skills: {{skills}}"
+    claude "Use the skill-creator skill to improve these skills: $*"
+
+# Launch Claude with only this checkout's plugins enabled
+[positional-arguments]
+claude *args: setup
+    #!/bin/sh
+    set -eu
+    # Disable every installed plugin for this session; --plugin-dir loads each
+    # checkout plugin, so unpublished edits take effect without reinstalling.
+    settings="$(command claude plugin list --json | jq -c '{enabledPlugins: (map({key: .id, value: false}) | from_entries)}')"
+    exec claude --settings "${settings}" --plugin-dir "{{justfile_directory()}}/plugins" "$@"
 
 # Checks run by the git pre-commit hook
 pre-commit: check-plugin bump lint
-
-# Install or replace the marketplace and enable all plugins
-install: setup
-    #!/bin/sh
-    set -eu
-    src="{{justfile_directory()}}"
-    manifest="${src}/.claude-plugin/marketplace.json"
-    marketplace_name="$(jq -r '.name' "${manifest}")"
-    # Register this checkout as a directory marketplace. A git-sourced marketplace
-    # re-syncs from its remote during install and loses unpushed plugins.
-    claude plugin marketplace remove "${marketplace_name}" >/dev/null 2>&1 || true
-    claude plugin marketplace add "${src}" --scope user
-    # install is a no-op when a plugin is already installed and never refreshes the
-    # cache from changed local source, so uninstall first to force a clean copy.
-    jq -r '.plugins[].name' "${manifest}" | while read -r plugin; do
-        ref="${plugin}@${marketplace_name}"
-        claude plugin uninstall "${ref}" >/dev/null 2>&1 || true
-        claude plugin install "${ref}" --scope user
-    done
 
 # Install the git pre-commit hook if missing
 setup:
