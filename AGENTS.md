@@ -18,7 +18,7 @@ justfile                               # Task runner — see `just --list`
 
 ## Plugins
 
-- `handoff-verifier` - self-verification hooks managed by MCP tools
+- `handoff-verifier` - self-verification hooks managed by in-session tools (a mod)
 - `noted` - skills for the noted CLI
 - `bashkit-agents` - sandboxed PR review against local standards
 - `session-findings` - mine session transcripts into findings notes
