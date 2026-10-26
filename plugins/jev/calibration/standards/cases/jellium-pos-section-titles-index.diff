@@ -1,0 +1,174 @@
+diff --git a/src/jfn_rust/src/shell/settings.rs b/src/jfn_rust/src/shell/settings.rs
+--- a/src/jfn_rust/src/shell/settings.rs
++++ b/src/jfn_rust/src/shell/settings.rs
+@@ -0,0 +93,170 @@
++    pub fn view(
++        &self,
++        locale: &LanguageLoader,
++    ) -> Element<'_, Message, Theme, iced_wgpu::Renderer> {
++        let label = |label| locale.settings_label(label);
++        let hwdec_selected = Self::selected_hwdec(jfn_config::hwdec());
++        let audio_channels = jfn_config::audio_channels();
++        let log_level = jfn_config::log_level();
++        let channel_locale = locale.clone();
++        let decoration_locale = locale.clone();
++        let log_locale = locale.clone();
++
++        let mut controls = column![
++            text(label(SettingsLabel::RestartNotice)).class(Some(theme::MUTED)),
++            self.group(
++                label(SECTION_TITLES[0]),
++                column![self.selection(
++                    label(SettingsLabel::HardwareDecoding),
++                    controls::select(
++                        HARDWARE_DECODING_CONTROL,
++                        hwdec_selected,
++                        Self::hardware_decoding_choices(),
++                        Clone::clone,
++                        Message::HardwareDecodingChanged,
++                    ),
++                    label(SettingsLabel::HardwareDecodingHelp),
++                )]
++            ),
++            self.group(
++                label(SECTION_TITLES[1]),
++                column![
++                    self.setting(
++                        label(SettingsLabel::AudioPassthrough),
++                        crate::shell::field::field(
++                            AUDIO_PASSTHROUGH_FIELD,
++                            "",
++                            &self.audio_passthrough
++                        )
++                        .on_input(Message::AudioPassthroughEdited)
++                        .on_submit(Message::CommitAudioPassthrough)
++                        .on_unfocus(Message::CommitAudioPassthrough)
++                        .padding(Padding::from([8, 10]))
++                        .into(),
++                        label(SettingsLabel::AudioPassthroughHelp),
++                    ),
++                    self.toggle(
++                        EXCLUSIVE_AUDIO_CONTROL,
++                        label(SettingsLabel::ExclusiveAudio),
++                        jfn_config::audio_exclusive(),
++                        Message::ExclusiveAudioOutputChanged,
++                        label(SettingsLabel::ExclusiveAudioHelp),
++                    ),
++                    self.selection(
++                        label(SettingsLabel::ChannelLayout),
++                        controls::select(
++                            CHANNEL_LAYOUT_CONTROL,
++                            audio_channels,
++                            ["", "stereo", "5.1", "7.1"].map(str::to_owned).to_vec(),
++                            move |value: &String| audio_channel_label(&channel_locale, value),
++                            Message::AudioChannelLayoutChanged,
++                        ),
++                        label(SettingsLabel::ChannelLayoutHelp),
++                    ),
++                ]
++            ),
++            self.group(
++                label(SECTION_TITLES[2]),
++                column![self.toggle(
++                    FORCE_TRANSCODE_CONTROL,
++                    label(SettingsLabel::ForceTranscoding),
++                    jfn_config::force_transcoding(),
++                    Message::ForceTranscodingChanged,
++                    label(SettingsLabel::ForceTranscodingHelp),
++                )]
++            ),
++        ]
++        .spacing(22);
++
++        let mut advanced = column![].spacing(16);
++        if !self.decoration_options.is_empty() {
++            advanced = advanced.push(self.selection(
++                label(SettingsLabel::WindowDecorations),
++                controls::select(
++                    WINDOW_DECORATION_CONTROL,
++                    jfn_config::configured_window_decorations(),
++                    self.decoration_options.clone(),
++                    move |value: &Option<WindowDecorations>| {
++                        decoration_label(&decoration_locale, value)
++                    },
++                    Message::WindowDecorationsChanged,
++                ),
++                label(SettingsLabel::WindowDecorationsHelp),
++            ));
++        }
++        if jfn_platform_abi::try_lease()
++            .is_some_and(|lease| transparent_titlebar_visible(lease.platform().display()))
++        {
++            advanced = advanced.push(self.toggle(
++                TRANSPARENT_TITLEBAR_CONTROL,
++                label(SettingsLabel::TransparentTitlebar),
++                jfn_config::transparent_titlebar(),
++                Message::TransparentTitlebarChanged,
++                label(SettingsLabel::TransparentTitlebarHelp),
++            ));
++        }
++        advanced = advanced
++            .push(self.toggle(
++                HIDE_SCROLLBAR_CONTROL,
++                label(SettingsLabel::HideScrollbar),
++                jfn_config::hide_scrollbar(),
++                Message::HideScrollbarChanged,
++                label(SettingsLabel::HideScrollbarHelp),
++            ))
++            .push(
++                self.setting(
++                    label(SettingsLabel::DeviceName),
++                    crate::shell::field::field(
++                        DEVICE_NAME_FIELD,
++                        &self.device_name_default,
++                        &self.device_name,
++                    )
++                    .on_input(Message::DeviceNameEdited)
++                    .on_submit(Message::CommitDeviceName)
++                    .on_unfocus(Message::CommitDeviceName)
++                    .padding(Padding::from([8, 10]))
++                    .into(),
++                    label(SettingsLabel::DeviceNameHelp),
++                ),
++            )
++            .push(
++                self.selection(
++                    label(SettingsLabel::LogLevel),
++                    controls::select(
++                        LOG_LEVEL_CONTROL,
++                        log_level,
++                        ["", "verbose", "debug", "warn", "error"]
++                            .map(str::to_owned)
++                            .to_vec(),
++                        move |value: &String| log_level_label(&log_locale, value),
++                        Message::LogLevelChanged,
++                    ),
++                    label(SettingsLabel::LogLevelHelp),
++                ),
++            );
++        controls = controls.push(self.group(label(SECTION_TITLES[3]), advanced));
++        if self.server_available {
++            controls = controls
++                .push(self.group(
++                    label(SECTION_TITLES[4]),
++                    column![self.action(
++                        OPEN_MPV_CONFIG_CONTROL,
++                        label(SettingsLabel::OpenMpvConfig),
++                        Message::OpenMpvConfigDirectory,
++                    )],
++                ))
++                .push(self.group(
++                    label(SECTION_TITLES[5]),
++                    column![self.action(
++                        RESET_SERVER_CONTROL,
++                        label(SettingsLabel::ResetServer),
++                        Message::ResetSavedServer,
++                    )],
++                ));
++        }
++
++        scrollable(controls)
++            .id(SETTINGS_SCROLL)
++            .height(Length::Fill)
++            .into()
++    }

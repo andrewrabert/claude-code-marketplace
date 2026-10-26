@@ -1,0 +1,61 @@
+diff --git a/src/http.rs b/src/http.rs
+--- a/src/http.rs
++++ b/src/http.rs
+@@ -0,0 +12,57 @@
++#[derive(Clone)]
++pub struct Token(HeaderValue);
++
++impl FromStr for Token {
++    type Err = InvalidHeaderValue;
++
++    fn from_str(s: &str) -> Result<Self, Self::Err> {
++        let mut value = HeaderValue::from_str(&format!("Bearer {s}"))?;
++        value.set_sensitive(true);
++        Ok(Self(value))
++    }
++}
++
++impl fmt::Debug for Token {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str("Token(..)")
++    }
++}
++
++#[derive(Debug, Clone, Copy)]
++pub enum Tls {
++    Verify,
++    Insecure,
++}
++
++#[derive(Debug, Clone)]
++pub struct BaseUrl(Url);
++
++#[derive(Debug, thiserror::Error)]
++pub enum InvalidBaseUrl {
++    #[error("{0}")]
++    Parse(#[from] url::ParseError),
++    #[error("base URL must be http or https: {0}")]
++    Scheme(Url),
++}
++
++impl BaseUrl {
++    pub fn endpoint<'a>(&self, segments: impl IntoIterator<Item = &'a str>) -> Url {
++        let mut url = self.0.clone();
++        if let Ok(mut path) = url.path_segments_mut() {
++            path.pop_if_empty().extend(segments);
++        }
++        url
++    }
++}
++
++impl FromStr for BaseUrl {
++    type Err = InvalidBaseUrl;
++
++    fn from_str(s: &str) -> Result<Self, Self::Err> {
++        let url = Url::parse(s)?;
++        match url.scheme() {
++            "http" | "https" => Ok(Self(url)),
++            _ => Err(InvalidBaseUrl::Scheme(url)),
++        }
++    }
++}

@@ -1,0 +1,24 @@
+diff --git a/src/claude.rs b/src/claude.rs
+--- a/src/claude.rs
++++ b/src/claude.rs
+@@ -0,0 +60,20 @@
++/// The command line bxwrp runs when linked as Claude Code's shell; `None` otherwise.
++pub fn shell_cli() -> anyhow::Result<Option<Cli>> {
++    let mut argv = std::env::args_os();
++    let argv0 = argv.next().unwrap_or_default();
++    if Path::new(&argv0).file_name() != Some(SHELL.as_ref()) {
++        return Ok(None);
++    }
++    let tmpdir =
++        std::env::var(TMPDIR_ENV).map_err(|error| anyhow::anyhow!("{TMPDIR_ENV}: {error}"))?;
++    // Claude Code writes its cwd file under its temp dir; expose it to the sandbox.
++    let mount = tmpdir.replace('\\', r"\\").replace(':', r"\:");
++    let prefix: [OsString; 5] = [
++        argv0,
++        "--mount".into(),
++        format!("{mount}:{mount}:rw").into(),
++        "exec".into(),
++        "bash".into(),
++    ];
++    Ok(Some(<Cli as clap::Parser>::parse_from(prefix.into_iter().chain(argv))))
++}

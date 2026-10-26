@@ -1,0 +1,45 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -0,0 +94,41 @@
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++enum Center {
++    Always,
++    Initial,
++}
++
++#[derive(Debug)]
++enum Target {
++    Focused,
++    Class(String),
++    ClassRegex(String),
++    Caption(String),
++}
++
++#[derive(Debug)]
++enum ProcessMatch {
++    Name(String),
++    Regex(regex::Regex),
++}
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++enum ScriptApi {
++    Legacy,
++    Rooted,
++    Nested,
++}
++
++enum Error {
++    DBus(zbus::Error),
++    Io(std::io::Error),
++    Regex(regex::Error),
++    KwinVersionUnknown,
++    ActiveWindowNotFound,
++    InvalidTempPath,
++}
++
++#[derive(Clone, Copy, Debug)]
++enum Size {
++    Px(f64),
++    Percent(f64),
++}

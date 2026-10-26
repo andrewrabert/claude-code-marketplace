@@ -1,0 +1,88 @@
+diff --git a/src/tools/hexd.rs b/src/tools/hexd.rs
+--- a/src/tools/hexd.rs
++++ b/src/tools/hexd.rs
+@@ -0,0 +750,84 @@
++fn parse_number(value: &str) -> Result<u64, String> {
++    let Digits { digits, radix } = number_digits
++        .parse(value)
++        .expect("every text is the digits of some radix");
++    u64::from_str_radix(digits, radix).map_err(|error| error.to_string())
++}
++
++fn parse_size(value: &str) -> Result<usize, String> {
++    usize::try_from(parse_number(value)?).map_err(|error| error.to_string())
++}
++
++/// A number, wrapped to its two's complement when a `-` follows the optional `+`.
++fn parse_offset(value: &str) -> Result<u64, String> {
++    let Signs { minus, number, .. } = signs
++        .parse(value)
++        .expect("every text has optional signs before its number");
++    let amount = parse_number(number)?;
++    Ok(if minus { amount.wrapping_neg() } else { amount })
++}
++
++/// A number, relative to the current position after a `+`, and from the end after a `-`.
++fn parse_seek(value: &str) -> Result<SeekOffset, String> {
++    let Signs {
++        plus,
++        minus,
++        number,
++    } = signs
++        .parse(value)
++        .expect("every text has optional signs before its number");
++    Ok(SeekOffset {
++        relative: plus,
++        from_end: minus,
++        amount: parse_number(number)?,
++    })
++}
++
++/// A number's digits and the radix they are written in.
++struct Digits<'i> {
++    digits: &'i str,
++    radix: u32,
++}
++
++/// Which of the optional `+` and `-`, in that order, start a number, and the text after them.
++struct Signs<'i> {
++    plus: bool,
++    minus: bool,
++    number: &'i str,
++}
++
++fn signs<'i>(input: &mut &'i str) -> winnow::Result<Signs<'i>, EmptyError> {
++    (opt('+'), opt('-'), rest)
++        .map(|(plus, minus, number): (Option<char>, Option<char>, &'i str)| Signs {
++            plus: plus.is_some(),
++            minus: minus.is_some(),
++            number,
++        })
++        .parse_next(input)
++}
++
++/// Hex digits after `0x`, octal digits after a leading `0`, or else decimal digits.
++fn number_digits<'i>(input: &mut &'i str) -> winnow::Result<Digits<'i>, EmptyError> {
++    alt((hex_digits, octal_digits, decimal_digits)).parse_next(input)
++}
++
++/// Everything after `0x` or `0X`, even nothing.
++fn hex_digits<'i>(input: &mut &'i str) -> winnow::Result<Digits<'i>, EmptyError> {
++    preceded(alt(("0x", "0X")), rest)
++        .map(|digits| Digits { digits, radix: 16 })
++        .parse_next(input)
++}
++
++/// Everything after a leading `0`, when something follows it.
++fn octal_digits<'i>(input: &mut &'i str) -> winnow::Result<Digits<'i>, EmptyError> {
++    preceded('0', rest)
++        .verify(|digits: &str| !digits.is_empty())
++        .map(|digits| Digits { digits, radix: 8 })
++        .parse_next(input)
++}
++
++fn decimal_digits<'i>(input: &mut &'i str) -> winnow::Result<Digits<'i>, EmptyError> {
++    rest.map(|digits| Digits { digits, radix: 10 })
++        .parse_next(input)
++}
++

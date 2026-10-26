@@ -36,6 +36,11 @@
       "name": "bashkit-agents",
       "source": "./plugins/bashkit-agents",
       "description": "Review pull requests in a sandbox using local .md files (`$STANDARDS_DIR`, default `${CLAUDE_PLUGIN_DATA}/standards`)"
+    },
+    {
+      "name": "jev",
+      "source": "./plugins/jev",
+      "description": "Review Rust code and surface specs against my standards with jev: a reviewing edit agent, an audit agent, and a scan tool"
     }
   ]
 }

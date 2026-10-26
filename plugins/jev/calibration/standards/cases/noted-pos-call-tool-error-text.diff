@@ -1,0 +1,30 @@
+diff --git a/crates/server/src/http.rs b/crates/server/src/http.rs
+--- a/crates/server/src/http.rs
++++ b/crates/server/src/http.rs
+@@ -0,0 +560,26 @@
++async fn call_tool(root: &NotedRoot, name: &str, args: Map<String, Value>) -> noted::Result<Value> {
++    let tool: Tool =
++        serde_json::from_value(json!({ "name": name, "args": args })).map_err(|e| {
++            match e.to_string().starts_with("unknown variant") {
++                true => NotedError::NotFound,
++                false => rejected(e.to_string()),
++            }
++        })?;
++    let value = match tool {
++        Tool::SearchNotes(args) => serde_json::to_value(root.search_notes(args).await?),
++        Tool::SearchLog(args) => serde_json::to_value(root.search_log(args).await?),
++        Tool::SearchTasks(args) => serde_json::to_value(root.search_tasks(args).await?),
++        Tool::ReadNote(args) => serde_json::to_value(root.read_note(args).await?),
++        Tool::WriteNote(args) => serde_json::to_value(root.write_note(args).await?),
++        Tool::EditNote(args) => serde_json::to_value(root.edit_note(args).await?),
++        Tool::MoveNote(args) => serde_json::to_value(root.move_note(args).await?),
++        Tool::DeleteNote(args) => serde_json::to_value(root.delete_note(args).await?),
++        Tool::LogNote(args) => serde_json::to_value(Tools::log_note(root, args).await?),
++        Tool::GetLog(args) => serde_json::to_value(root.get_log(args).await?),
++        Tool::CreateTask(args) => serde_json::to_value(root.create_task(args).await?),
++        Tool::GetTasks(args) => serde_json::to_value(root.get_tasks(args).await?),
++        Tool::UpdateTask(args) => serde_json::to_value(root.update_task(args).await?),
++        Tool::MoveTask(args) => serde_json::to_value(root.move_task(args).await?),
++    };
++    value.map_err(|e| json_error("tool result", e))
++}

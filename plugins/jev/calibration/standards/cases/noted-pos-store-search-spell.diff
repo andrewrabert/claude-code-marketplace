@@ -1,0 +1,34 @@
+diff --git a/crates/core/src/fs/store.rs b/crates/core/src/fs/store.rs
+--- a/crates/core/src/fs/store.rs
++++ b/crates/core/src/fs/store.rs
+@@ -0,0 +268,30 @@
++    // hits come back spelled from the search root, a record as the task or
++    // entry that holds it
++    pub(crate) async fn search(&self, at: &ReadableDir, query: &SearchQuery) -> Result<Vec<RawHit>> {
++        let spell = |raw: &str| -> String {
++            let mut out = String::new();
++            let mut mark = None;
++            for part in raw.split('/').filter(|part| !part.is_empty()) {
++                match (mark.take(), part) {
++                    (Some(mark), _) => out.push_str(&format!("/{mark}{part}")),
++                    (None, ".tasks") => mark = Some('#'),
++                    (None, ".logs") => mark = Some('@'),
++                    (None, ".task.md" | ".log.md") => {}
++                    (None, _) => out.push_str(&format!("/{part}")),
++                }
++            }
++            match out.is_empty() {
++                true => String::from("/"),
++                false => out,
++            }
++        };
++        let found =
++            platform::grep(self.base(), &self.rooted(at.at().segments()), query).await?;
++        Ok(found
++            .into_iter()
++            .map(|raw| RawHit {
++                path: spell(&raw.path),
++                ..raw
++            })
++            .collect())
++    }

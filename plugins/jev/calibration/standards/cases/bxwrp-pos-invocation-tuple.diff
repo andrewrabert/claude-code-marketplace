@@ -1,0 +1,37 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -0,0 +172,33 @@
++fn run(
++    target: Target,
++    settings: bxwrp::config::Settings,
++    session: Option<PathBuf>,
++) -> anyhow::Result<()> {
++    let invocation = match target {
++        Target::Mcp => None,
++        Target::StdinScript { arg0 } => {
++            let bytes = match read_stdin()? {
++                ScriptInput::Closed => Vec::new(),
++                ScriptInput::Bytes(bytes) => bytes,
++            };
++            let script = String::from_utf8(bytes)
++                .map_err(|_| anyhow::anyhow!("exec: script on stdin is not valid UTF-8"))?;
++            Some((script, arg0, Vec::new(), false))
++        }
++        Target::Invoke { arg0, args } => Some((r#""$0" "$@""#.to_string(), arg0, args, true)),
++    };
++    let stdin = match &invocation {
++        Some((_, _, _, true)) => read_stdin()?,
++        _ => ScriptInput::Closed,
++    };
++    let result = tokio::runtime::Runtime::new()?.block_on(async {
++        let sandbox = bxwrp::backend::new(&settings, session).await?;
++        if let Some((script, arg0, args, _)) = invocation {
++            Ok::<_, anyhow::Error>(Some(
++                sandbox.exec_script(&script, &arg0, args, stdin).await?,
++            ))
++        } else {
++            mcp::serve(sandbox, settings).await?;
++            Ok(None)
++        }
++    })?;

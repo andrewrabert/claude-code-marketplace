@@ -1,0 +1,88 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -0,0 +80,84 @@
++struct BridgeMain {
++    socket: PathBuf,
++}
++
++impl BridgeMain {
++    fn detect() -> Option<Self> {
++        let socket = std::env::var_os(BRIDGE_ENV)?;
++        Some(Self {
++            socket: PathBuf::from(socket),
++        })
++    }
++
++    fn main(self) -> anyhow::Result<()> {
++        let mut argv = std::env::args_os();
++        let argv0 = argv.next().unwrap_or_default();
++        let name = Path::new(&argv0)
++            .file_name()
++            .map(|name| name.to_string_lossy().into_owned())
++            .unwrap_or_default();
++        let tool = ToolName::try_from(name).map_err(|error| anyhow::anyhow!("bxwrp: {error}"))?;
++        let exit_code = shim(&self.socket, tool, argv.collect())?;
++        std::process::exit(exit_code)
++    }
++}
++
++struct ShellMain {
++    shell: &'static str,
++    args: Vec<String>,
++}
++
++impl ShellMain {
++    fn detect() -> Option<Self> {
++        let mut argv = std::env::args_os();
++        let argv0 = PathBuf::from(argv.next()?);
++        let name = argv0.file_name()?.to_str()?;
++        let shell = SHELLS.into_iter().find(|shell| {
++            name.strip_suffix(shell)
++                .is_some_and(|rest| rest.is_empty() || rest.ends_with('-'))
++        })?;
++        Some(Self {
++            shell,
++            args: argv.map(|arg| arg.to_string_lossy().into_owned()).collect(),
++        })
++    }
++
++    fn main(self) -> anyhow::Result<()> {
++        let host = Host::load(&[])?;
++        install_log_subscriber();
++        let settings = host.resolve(Config::default())?;
++        let session = session_path(std::env::var_os("BXWRP_SESSION").map(PathBuf::from))?;
++        let target = if self.args.is_empty() {
++            stdin_script_target(self.shell)?
++        } else {
++            Target::Invoke {
++                arg0: self.shell.to_string(),
++                args: self.args,
++            }
++        };
++        run(target, settings, session)
++    }
++}
++
++struct CliMain;
++
++impl CliMain {
++    fn main() -> anyhow::Result<()> {
++        let cli = Cli::read();
++        match cli.mode {
++            Mode::Config { action } => config_main(action, cli.options),
++            Mode::Exec { args } => shell_main(Some(args), cli.options),
++            Mode::Mcp => shell_main(None, cli.options),
++        }
++    }
++}
++
++fn main() -> anyhow::Result<()> {
++    if let Some(bridge) = BridgeMain::detect() {
++        bridge.main()
++    } else if let Some(shell) = ShellMain::detect() {
++        shell.main()
++    } else {
++        CliMain::main()
++    }
++}

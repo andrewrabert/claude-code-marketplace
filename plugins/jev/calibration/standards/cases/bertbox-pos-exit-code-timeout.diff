@@ -1,0 +1,40 @@
+diff --git a/src/tools/exit_code.rs b/src/tools/exit_code.rs
+--- a/src/tools/exit_code.rs
++++ b/src/tools/exit_code.rs
+@@ -0,0 +76,36 @@
++/// The one-based cursor column, asked of the terminal with a cursor position report.
++fn cursor_column() -> Result<u32> {
++    let mut tty = OpenOptions::new()
++        .read(true)
++        .write(true)
++        .open("/dev/tty")
++        .context("opening /dev/tty")?;
++    let original = termios::tcgetattr(&tty).context("reading terminal attributes")?;
++    let mut raw = original.clone();
++    raw.local_flags.remove(LocalFlags::ICANON | LocalFlags::ECHO);
++    raw.control_chars[SpecialCharacterIndices::VMIN as usize] = 0;
++    raw.control_chars[SpecialCharacterIndices::VTIME as usize] = 1;
++    termios::tcsetattr(&tty, SetArg::TCSANOW, &raw).context("setting terminal attributes")?;
++    let report = read_cursor_report(&mut tty);
++    termios::tcsetattr(&tty, SetArg::TCSANOW, &original)
++        .context("restoring terminal attributes")?;
++    parse_column(&report?)
++}
++
++fn read_cursor_report(tty: &mut File) -> Result<Vec<u8>> {
++    tty.write_all(b"\x1b[6n")?;
++    tty.flush()?;
++    let deadline = Instant::now() + CURSOR_REPORT_TIMEOUT;
++    let mut report = Vec::new();
++    let mut byte = [0; 1];
++    while Instant::now() < deadline {
++        if tty.read(&mut byte)? == 0 {
++            continue;
++        }
++        if byte[0] == b'R' {
++            return Ok(report);
++        }
++        report.push(byte[0]);
++    }
++    bail!("the terminal did not report the cursor position")
++}

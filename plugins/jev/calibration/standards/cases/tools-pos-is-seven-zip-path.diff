@@ -1,0 +1,19 @@
+diff --git a/src/tools/archive/extract/detect.rs b/src/tools/archive/extract/detect.rs
+--- a/src/tools/archive/extract/detect.rs
++++ b/src/tools/archive/extract/detect.rs
+@@ -0,0 +16,15 @@
++const SEVEN_ZIP_SIGNATURE: &[u8] = b"7z\xbc\xaf'\x1c";
++
++fn read_at(file: &mut File, offset: u64, length: u64) -> Result<Vec<u8>> {
++    let mut data = Vec::new();
++    file.seek(SeekFrom::Start(offset))?;
++    file.by_ref().take(length).read_to_end(&mut data)?;
++    Ok(data)
++}
++
++pub fn is_seven_zip(path: &Path) -> Result<bool> {
++    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
++    let start = read_at(&mut file, 0, SEVEN_ZIP_SIGNATURE.len() as u64)
++        .with_context(|| format!("reading {}", path.display()))?;
++    Ok(start == SEVEN_ZIP_SIGNATURE)
++}

@@ -1,0 +1,71 @@
+diff --git a/crates/core/src/domain/storepath.rs b/crates/core/src/domain/storepath.rs
+--- a/crates/core/src/domain/storepath.rs
++++ b/crates/core/src/domain/storepath.rs
+@@ -0,0 +1,67 @@
++/// The record a task or entry directory holds.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(crate) enum StoreFilename {
++    Task, // .task.md
++    Log,  // .log.md
++}
++
++impl StoreFilename {
++    fn new(part: &str) -> Option<StoreFilename> {
++        match part {
++            ".task.md" => Some(StoreFilename::Task),
++            ".log.md" => Some(StoreFilename::Log),
++            _ => None,
++        }
++    }
++}
++
++/// A path as spelled under NotedBase: `.tasks/N` reads back as `#N`,
++/// `.logs/S` as `@S`; a record, if any, is the last part.
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub(crate) struct StorePath {
++    segments: Segments,
++    file: Option<StoreFilename>,
++}
++
++impl FromStr for StorePath {
++    type Err = NotedError;
++
++    fn from_str(raw: &str) -> Result<StorePath> {
++        StorePath::parse(raw).map_err(|reason| rejected(format!("{raw}: {reason}")))
++    }
++}
++
++impl StorePath {
++    fn parse(raw: &str) -> std::result::Result<StorePath, &'static str> {
++        let rest = raw
++            .strip_prefix(Path::SEPARATOR)
++            .ok_or("must start with a separator")?;
++        let mut parts: Vec<&str> = match rest.is_empty() {
++            true => Vec::new(),
++            false => rest.split(Path::SEPARATOR).collect(),
++        };
++        let file = parts.last().and_then(|last| StoreFilename::new(last));
++        if file.is_some() {
++            parts.pop();
++        }
++
++        let mut segments = Vec::new();
++        let mut parts = parts.into_iter();
++        while let Some(part) = parts.next() {
++            let segment = match part {
++                ".tasks" => Segment::Task(Task::new(parts.next().ok_or("'.tasks' has no number")?)?),
++                ".logs" => Segment::Log(Log::new(parts.next().ok_or("'.logs' has no instant")?)?),
++                name if StoreFilename::new(name).is_some() => return Err("a record is not the last part"),
++                name => match Segment::new(name)? {
++                    note @ Segment::Note(_) => note,
++                    _ => return Err("'#' and '@' are not stored spellings"),
++                },
++            };
++            segments.push(segment);
++        }
++        Ok(StorePath {
++            segments: Segments(segments),
++            file,
++        })
++    }
++}

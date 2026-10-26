@@ -1,0 +1,15 @@
+diff --git a/src/store.rs b/src/store.rs
+--- a/src/store.rs
++++ b/src/store.rs
+@@ -0,0 +1,11 @@
++impl Store {
++    pub fn save(&self, path: &Path) -> bool {
++        match fs::write(path, self.to_bytes()) {
++            Ok(()) => true,
++            Err(e) => {
++                eprintln!("save failed: {e}");
++                false
++            }
++        }
++    }
++}

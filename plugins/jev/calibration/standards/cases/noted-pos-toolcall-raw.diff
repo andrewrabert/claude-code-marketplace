@@ -1,0 +1,35 @@
+diff --git a/crates/core/src/call.rs b/crates/core/src/call.rs
+--- a/crates/core/src/call.rs
++++ b/crates/core/src/call.rs
+@@ -0,0 +1,31 @@
++pub struct ToolCall {
++    name: String,
++    args: Value,
++}
++
++impl ToolCall {
++    pub fn new<A: ToolArgs>(args: A) -> Result<ToolCall> {
++        Ok(ToolCall {
++            name: A::TOOL.to_string(),
++            args: serde_json::to_value(args).map_err(|e| json_error("tool arguments", e))?,
++        })
++    }
++
++    pub fn raw(name: &str, args: Value) -> Result<ToolCall> {
++        if !is_tool(name) {
++            return Err(NotedError::NotFound);
++        }
++        Ok(ToolCall {
++            name: name.to_string(),
++            args,
++        })
++    }
++
++    pub fn name(&self) -> &str {
++        &self.name
++    }
++
++    pub fn args(&self) -> &Value {
++        &self.args
++    }
++}

@@ -1,0 +1,12 @@
+diff --git a/src/tools/git/sync/source.rs b/src/tools/git/sync/source.rs
+--- a/src/tools/git/sync/source.rs
++++ b/src/tools/git/sync/source.rs
+@@ -0,0 +1,8 @@
++/// The url's scheme and the rest after its `:`, or else no scheme and the whole url.
++fn split_scheme(url: &str) -> (&str, &str) {
++    let mut rest = url;
++    match scheme.parse_next(&mut rest) {
++        Ok(scheme) => (scheme, rest),
++        Err(EmptyError) => ("", url),
++    }
++}

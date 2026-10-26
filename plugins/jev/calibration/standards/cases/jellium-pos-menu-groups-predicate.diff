@@ -1,0 +1,29 @@
+diff --git a/src/lang/src/lib.rs b/src/lang/src/lib.rs
+--- a/src/lang/src/lib.rs
++++ b/src/lang/src/lib.rs
+@@ -0,0 +16,25 @@
++/// Every context menu's commands in display order, a separator between
++/// groups. Chromium's `RenderViewContextMenu`
++/// (`chrome/browser/renderer_context_menu/render_view_context_menu.cc` at
++/// chromium/chromium 8221f466e896dc8f473784ba76a6948c1e100a8d):
++/// `AppendPageItems` L2642-L2645 and `AppendOtherEditableItems` L3172-L3222.
++pub const MENU_LAYOUT: &[&[MenuLabel]] = &[
++    &[MenuLabel::Back, MenuLabel::Forward, MenuLabel::Reload],
++    &[MenuLabel::Undo, MenuLabel::Redo],
++    &[
++        MenuLabel::Cut,
++        MenuLabel::Copy,
++        MenuLabel::Paste,
++        MenuLabel::SelectAll,
++    ],
++];
++
++/// [`MENU_LAYOUT`] holding only the commands `shown` accepts, empty groups
++/// dropped.
++pub fn menu_groups(shown: impl Fn(MenuLabel) -> bool) -> Vec<Vec<MenuLabel>> {
++    MENU_LAYOUT
++        .iter()
++        .map(|group| group.iter().copied().filter(|&label| shown(label)).collect::<Vec<_>>())
++        .filter(|group| !group.is_empty())
++        .collect()
++}

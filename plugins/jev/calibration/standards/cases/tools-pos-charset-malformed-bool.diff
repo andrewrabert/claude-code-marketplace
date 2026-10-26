@@ -1,0 +1,25 @@
+diff --git a/src/charset.rs b/src/charset.rs
+--- a/src/charset.rs
++++ b/src/charset.rs
+@@ -0,0 +1,21 @@
++use std::borrow::Cow;
++
++use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
++
++pub struct Decoded<'a> {
++    pub text: Cow<'a, str>,
++    pub encoding: &'static str,
++    pub malformed: bool,
++}
++
++pub fn decode(data: &[u8]) -> Decoded<'_> {
++    let mut detector = EncodingDetector::new(Iso2022JpDetection::Allow);
++    detector.feed(data, true);
++    let encoding = detector.guess(None, Utf8Detection::Allow);
++    let (text, _, malformed) = encoding.decode(data);
++    Decoded {
++        text,
++        encoding: encoding.name(),
++        malformed,
++    }
++}

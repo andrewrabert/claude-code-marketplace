@@ -1,0 +1,17 @@
+diff --git a/src/pool.rs b/src/pool.rs
+--- a/src/pool.rs
++++ b/src/pool.rs
+@@ -0,0 +1,13 @@
++use std::num::NonZeroUsize;
++use std::sync::{Mutex, PoisonError, mpsc};
++use std::thread;
++
++use anyhow::{Context, Result};
++
++/// The worker count for a "0 means one per cpu" job-count flag.
++pub fn jobs(num_procs: usize) -> Result<NonZeroUsize> {
++    match NonZeroUsize::new(num_procs) {
++        Some(jobs) => Ok(jobs),
++        None => thread::available_parallelism().context("counting cpus"),
++    }
++}

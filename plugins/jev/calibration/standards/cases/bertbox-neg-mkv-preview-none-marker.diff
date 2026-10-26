@@ -1,0 +1,72 @@
+diff --git a/src/tools/mkv_preview.rs b/src/tools/mkv_preview.rs
+--- a/src/tools/mkv_preview.rs
++++ b/src/tools/mkv_preview.rs
+@@ -0,0 +68,68 @@
++pub fn summary(path: &Path) -> Result<Vec<u8>> {
++    // Both are spawned before either is awaited so they run concurrently.
++    let mkvmerge = spawn("mkvmerge", Command::new("mkvmerge").arg("-J").arg(path))?;
++    let mediainfo = spawn(
++        "mediainfo",
++        Command::new("mediainfo")
++            .args(["--Output=JSON", "--"])
++            .arg(path),
++    )?;
++    let mkvmerge: Identify = finish("mkvmerge", mkvmerge)?;
++    let mediainfo: MediaInfo = finish("mediainfo", mediainfo)?;
++
++    let mediainfo_by_uid = mediainfo_by_uid(&mediainfo)?;
++    let mut sections: [Vec<String>; TRACK_TYPES.len()] = Default::default();
++    for track in &mkvmerge.tracks {
++        let Some(index) = TRACK_TYPES.iter().position(|kind| *kind == track.kind) else {
++            continue;
++        };
++        let selector = format!("track:{}{}", short(track.kind), sections[index].len() + 1);
++        let mut fields = vec![format!("{} {selector}", track.id)];
++        let properties = &track.properties;
++        if track.kind == TrackType::Video {
++            let uid = properties
++                .uid
++                .with_context(|| format!("{selector} has no uid"))?;
++            let info = mediainfo_by_uid
++                .get(&u128::from(uid))
++                .ok_or_else(|| anyhow!("mediainfo has no track with uid {uid}"))?;
++            fields.push(video_format(info)?);
++            fields.push(format!(
++                "{}x{}",
++                dimension(info.width.as_deref(), "width", uid)?,
++                dimension(info.height.as_deref(), "height", uid)?,
++            ));
++        } else {
++            let language = properties.language.as_deref().unwrap_or(NO_LANGUAGE);
++            fields.push(language.to_owned());
++            fields.push(track.codec.clone());
++            if let Some(name) = &properties.track_name {
++                fields.push(name.clone());
++            }
++        }
++        sections[index].push(fields.join("\t"));
++    }
++
++    let size = fs::metadata(path)
++        .with_context(|| format!("reading the size of {}", path.display()))?
++        .len();
++    let container = &mkvmerge.container.properties;
++    let mut out = Vec::new();
++    if let Some(title) = &container.title {
++        writeln!(out, "title: {}", title.trim())?;
++    }
++    if let Some(nanoseconds) = container.duration {
++        writeln!(out, "duration: {}", human_duration(nanoseconds))?;
++    }
++    writeln!(out, "size: {}", human_size(size))?;
++    for (kind, lines) in TRACK_TYPES.iter().zip(&sections) {
++        if lines.is_empty() {
++            continue;
++        }
++        writeln!(out, "{}", heading(*kind))?;
++        for line in lines {
++            writeln!(out, "  {line}")?;
++        }
++    }
++    Ok(out)
++}

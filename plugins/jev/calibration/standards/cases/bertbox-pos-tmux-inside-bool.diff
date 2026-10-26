@@ -1,0 +1,41 @@
+diff --git a/src/tmux.rs b/src/tmux.rs
+--- a/src/tmux.rs
++++ b/src/tmux.rs
+@@ -0,0 +1,37 @@
++use std::env;
++use std::ffi::OsStr;
++use std::process::Command;
++
++use anyhow::Result;
++
++use crate::git;
++
++pub fn inside() -> bool {
++    env::var_os("TMUX").is_some_and(|value| !value.is_empty())
++}
++
++pub fn command<I, S>(args: I) -> Command
++where
++    I: IntoIterator<Item = S>,
++    S: AsRef<OsStr>,
++{
++    let mut command = Command::new("tmux");
++    command.args(args);
++    command
++}
++
++pub fn run<I, S>(args: I) -> Result<()>
++where
++    I: IntoIterator<Item = S>,
++    S: AsRef<OsStr>,
++{
++    git::run(&mut command(args))
++}
++
++pub fn capture<I, S>(args: I) -> Result<String>
++where
++    I: IntoIterator<Item = S>,
++    S: AsRef<OsStr>,
++{
++    git::capture(&mut command(args))
++}

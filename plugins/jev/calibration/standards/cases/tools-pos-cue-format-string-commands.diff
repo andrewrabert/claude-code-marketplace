@@ -1,0 +1,34 @@
+diff --git a/src/cue.rs b/src/cue.rs
+--- a/src/cue.rs
++++ b/src/cue.rs
+@@ -0,0 +136,30 @@
++    /// The sheet's lines, one space between tokens, each line ending in `\n`. `FILE` and the
++    /// lines before the first `TRACK` start at column 0, `TRACK` at 2, and the other lines after a
++    /// `TRACK` at 4.
++    pub fn format(&self) -> String {
++        let mut text = String::new();
++        let mut in_track = false;
++        for line in &self.tokens {
++            let (command, arguments) = line.split_first().expect("a line has a command");
++            let indent = match command.as_str() {
++                "FILE" => {
++                    in_track = false;
++                    ""
++                }
++                "TRACK" => {
++                    in_track = true;
++                    "  "
++                }
++                _ if in_track => "    ",
++                _ => "",
++            };
++            text.push_str(indent);
++            text.push_str(command);
++            for argument in arguments {
++                text.push(' ');
++                text.push_str(&quote(argument));
++            }
++            text.push('\n');
++        }
++        text
++    }

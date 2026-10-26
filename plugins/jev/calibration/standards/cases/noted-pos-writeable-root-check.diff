@@ -1,0 +1,15 @@
+diff --git a/crates/core/src/policy.rs b/crates/core/src/policy.rs
+--- a/crates/core/src/policy.rs
++++ b/crates/core/src/policy.rs
+@@ -0,0 +146,11 @@
++    // a write is never allowed on the scope directory itself
++    pub(crate) fn writeable(&self, rel: &NotePath) -> Result<Writeable> {
++        let at = self.scope.join(rel)?;
++        if at.is_root() {
++            return Err(NotedError::Forbidden);
++        }
++        match self.entries.for_path(&at).write {
++            true => Ok(Writeable(at)),
++            false => Err(NotedError::Forbidden),
++        }
++    }

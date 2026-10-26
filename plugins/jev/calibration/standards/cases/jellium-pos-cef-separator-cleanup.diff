@@ -1,0 +1,33 @@
+diff --git a/src/jfn_cef/src/client_impl/context_menu.rs b/src/jfn_cef/src/client_impl/context_menu.rs
+--- a/src/jfn_cef/src/client_impl/context_menu.rs
++++ b/src/jfn_cef/src/client_impl/context_menu.rs
+@@ -0,0 +22,29 @@
++            let Some(m) = model else { return };
++            let reload_id: c_int = MenuId::RELOAD.get_raw() as c_int;
++            if m.index_of(reload_id) < 0 {
++                let label = jfn_lang::menu_labels().get(MenuLabel::Reload);
++                m.add_item(reload_id, Some(&CefString::from(label)));
++            }
++            // Keep the commands the menu shows, and a separator only where a
++            // shown command follows it and another precedes it.
++            let mut command_follows = false;
++            for i in (0..m.count()).rev() {
++                let t: sys::cef_menu_item_type_t = m.type_at(i).into();
++                let separator = t == sys::cef_menu_item_type_t::MENUITEMTYPE_SEPARATOR;
++                let keep = if separator {
++                    command_follows
++                } else {
++                    crate::client::menu_label(m.command_id_at(i)).is_some()
++                };
++                if keep {
++                    command_follows = !separator;
++                } else {
++                    m.remove_at(i);
++                }
++            }
++            if m.count() > 0 {
++                let t: sys::cef_menu_item_type_t = m.type_at(0).into();
++                if t == sys::cef_menu_item_type_t::MENUITEMTYPE_SEPARATOR {
++                    m.remove_at(0);
++                }
++            }

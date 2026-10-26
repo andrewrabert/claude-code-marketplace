@@ -1,0 +1,45 @@
+diff --git a/src/tools/preview/render.rs b/src/tools/preview/render.rs
+--- a/src/tools/preview/render.rs
++++ b/src/tools/preview/render.rs
+@@ -0,0 +200,41 @@
++struct HexLayout {
++    line_bytes: usize,
++    group_bytes: usize,
++}
++
++impl HexLayout {
++    const XXD: Self = Self {
++        line_bytes: 16,
++        group_bytes: 2,
++    };
++
++    const fn hex_width(&self) -> usize {
++        self.line_bytes * 2 + self.line_bytes.div_ceil(self.group_bytes) - 1
++    }
++
++    fn render(&self, data: &[u8]) -> String {
++        let width = self.hex_width();
++        let mut out = String::new();
++        for (index, line) in data.chunks(self.line_bytes).enumerate() {
++            let groups: Vec<String> = line.chunks(self.group_bytes).map(hex::encode).collect();
++            let text: String = line
++                .iter()
++                .map(|&byte| {
++                    if byte.is_ascii_graphic() || byte == b' ' {
++                        char::from(byte)
++                    } else {
++                        '.'
++                    }
++                })
++                .collect();
++            writeln!(
++                out,
++                "{:08x}: {:<width$}  {text}",
++                index * self.line_bytes,
++                groups.join(" ")
++            )
++            .unwrap();
++        }
++        out
++    }
++}

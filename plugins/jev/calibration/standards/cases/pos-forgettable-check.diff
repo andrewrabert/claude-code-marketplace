@@ -1,0 +1,22 @@
+diff --git a/src/token.rs b/src/token.rs
+--- a/src/token.rs
++++ b/src/token.rs
+@@ -0,0 +1,18 @@
++pub struct Token {
++    raw: String,
++    pub verified: bool,
++}
++
++impl Token {
++    pub fn parse(raw: &str) -> Token {
++        Token { raw: raw.to_owned(), verified: false }
++    }
++
++    pub fn verify(&mut self, key: &Key) {
++        self.verified = key.check(&self.raw);
++    }
++
++    pub fn claims(&self) -> Claims {
++        decode(&self.raw)
++    }
++}

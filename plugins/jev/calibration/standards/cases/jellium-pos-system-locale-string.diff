@@ -1,0 +1,20 @@
+diff --git a/src/lang/src/lib.rs b/src/lang/src/lib.rs
+--- a/src/lang/src/lib.rs
++++ b/src/lang/src/lib.rs
+@@ -0,0 +85,16 @@
++/// `LC_ALL`, `LC_MESSAGES`, `LANG`, lowercased, `_` folded to `-`, encoding and
++/// modifier suffixes stripped; [`FALLBACK_LANGUAGE`] when none is set.
++pub fn system_locale() -> String {
++    for key in ["LC_ALL", "LC_MESSAGES", "LANG"] {
++        let Ok(raw) = std::env::var(key) else {
++            continue;
++        };
++        let trimmed = raw.split('.').next().unwrap_or(&raw);
++        let trimmed = trimmed.split('@').next().unwrap_or(trimmed);
++        if trimmed.is_empty() || trimmed == "C" || trimmed == "POSIX" {
++            continue;
++        }
++        return trimmed.to_lowercase().replace('_', "-");
++    }
++    FALLBACK_LANGUAGE.to_owned()
++}

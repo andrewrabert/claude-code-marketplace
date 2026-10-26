@@ -1,0 +1,11 @@
+diff --git a/crates/core/src/policy.rs b/crates/core/src/policy.rs
+--- a/crates/core/src/policy.rs
++++ b/crates/core/src/policy.rs
+@@ -0,0 +38,7 @@
++fn key(at: &NotePath) -> String {
++    let mut out = at.to_string();
++    if !out.ends_with(Path::SEPARATOR) {
++        out.push_str(Path::SEPARATOR);
++    }
++    out
++}

@@ -1,0 +1,25 @@
+diff --git a/src/jfn_cef/src/client.rs b/src/jfn_cef/src/client.rs
+--- a/src/jfn_cef/src/client.rs
++++ b/src/jfn_cef/src/client.rs
+@@ -0,0 +252,21 @@
++/// The CEF commands the context menu shows, each under the app's own label.
++const MENU_COMMANDS: [(MenuId, MenuLabel); 10] = [
++    (MenuId::BACK, MenuLabel::Back),
++    (MenuId::FORWARD, MenuLabel::Forward),
++    (MenuId::RELOAD, MenuLabel::Reload),
++    (MenuId::UNDO, MenuLabel::Undo),
++    (MenuId::REDO, MenuLabel::Redo),
++    (MenuId::CUT, MenuLabel::Cut),
++    (MenuId::COPY, MenuLabel::Copy),
++    (MenuId::PASTE, MenuLabel::Paste),
++    (MenuId::DELETE, MenuLabel::Delete),
++    (MenuId::SELECT_ALL, MenuLabel::SelectAll),
++];
++
++/// `None` for a command the context menu does not show.
++pub(crate) fn menu_label(command_id: c_int) -> Option<MenuLabel> {
++    MENU_COMMANDS
++        .iter()
++        .find(|(id, _)| id.get_raw() as c_int == command_id)
++        .map(|&(_, label)| label)
++}

@@ -1,0 +1,35 @@
+diff --git a/src/cue.rs b/src/cue.rs
+--- a/src/cue.rs
++++ b/src/cue.rs
+@@ -0,0 +260,31 @@
++#[derive(Debug)]
++pub enum CueSheetError {
++    /// The sheet is not UTF-8 without a byte-order mark.
++    Encoding,
++    NoTracks,
++    UnknownCommand(String),
++    UnmatchedQuote,
++    InvalidFileLine,
++    InvalidTrackLine,
++}
++
++impl fmt::Display for CueSheetError {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self {
++            CueSheetError::Encoding => {
++                f.write_str("the cue sheet is not UTF-8 without a byte-order mark")
++            }
++            CueSheetError::NoTracks => f.write_str("the cue sheet has no tracks"),
++            CueSheetError::UnknownCommand(command) => {
++                write!(f, "{command:?} is not a command")
++            }
++            CueSheetError::UnmatchedQuote => f.write_str("a quotation mark has no partner"),
++            CueSheetError::InvalidFileLine => {
++                f.write_str("a FILE line is not FILE [filename] [filetype]")
++            }
++            CueSheetError::InvalidTrackLine => {
++                f.write_str("a TRACK line is not TRACK [number] [datatype]")
++            }
++        }
++    }
++}

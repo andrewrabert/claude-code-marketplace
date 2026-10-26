@@ -1,0 +1,90 @@
+diff --git a/src/tools/archive/extract/backend/udisksctl.rs b/src/tools/archive/extract/backend/udisksctl.rs
+--- a/src/tools/archive/extract/backend/udisksctl.rs
++++ b/src/tools/archive/extract/backend/udisksctl.rs
+@@ -0,0 +32,86 @@
++fn info(device: &str) -> Result<Info> {
++    let output = process::capture(
++        Command::new("udisksctl")
++            .args(["info", "--block-device"])
++            .arg(device),
++    )?;
++    let output = String::from_utf8(output).context("udisksctl info is not valid UTF-8")?;
++    parse_info(&output)
++}
++
++enum Line<'i> {
++    Ignored,
++    Section(&'i str),
++    Property { name: &'i str, value: &'i str },
++    Continuation(&'i str),
++}
++
++fn parse_info(output: &str) -> Result<Info> {
++    let mut info = Info::new();
++    let mut section = None;
++    let mut property = None;
++    for text in output.lines() {
++        let value = match line
++            .parse(text)
++            .map_err(|_: ParseError<&str, EmptyError>| anyhow!(UNEXPECTED_OUTPUT))?
++        {
++            Line::Ignored => continue,
++            Line::Section(name) => {
++                info.insert(name.to_owned(), BTreeMap::new());
++                section = Some(name);
++                property = None;
++                continue;
++            }
++            Line::Property { name, value } => {
++                property = Some(name);
++                value
++            }
++            Line::Continuation(value) => value,
++        };
++        let properties = section
++            .and_then(|section| info.get_mut(section))
++            .context(UNEXPECTED_OUTPUT)?;
++        let name = property.context(UNEXPECTED_OUTPUT)?;
++        if !value.is_empty() {
++            properties
++                .entry(name.to_owned())
++                .or_default()
++                .push(value.to_owned());
++        }
++    }
++    Ok(info)
++}
++
++// The indent tells a line's kind; blank lines and those indented less than a section are ignored.
++fn line<'i>(input: &mut &'i str) -> winnow::Result<Line<'i>, EmptyError> {
++    let indent = whitespace.parse_next(input)?.len();
++    if input.is_empty() || indent < SECTION_INDENT {
++        rest.map(|_| Line::Ignored).parse_next(input)
++    } else if indent < PROPERTY_INDENT {
++        section.map(Line::Section).parse_next(input)
++    } else if indent == PROPERTY_INDENT {
++        property.parse_next(input)
++    } else {
++        continuation.map(Line::Continuation).parse_next(input)
++    }
++}
++
++fn whitespace<'i>(input: &mut &'i str) -> winnow::Result<&'i str, EmptyError> {
++    take_while(0.., char::is_whitespace).parse_next(input)
++}
++
++fn section<'i>(input: &mut &'i str) -> winnow::Result<&'i str, EmptyError> {
++    rest.map(|header: &'i str| header.trim_end().trim_end_matches(':'))
++        .parse_next(input)
++}
++
++fn property<'i>(input: &mut &'i str) -> winnow::Result<Line<'i>, EmptyError> {
++    let name = terminated(take_until(0.., ':'), ':').parse_next(input)?;
++    let value = continuation.parse_next(input)?;
++    Ok(Line::Property { name, value })
++}
++
++fn continuation<'i>(input: &mut &'i str) -> winnow::Result<&'i str, EmptyError> {
++    rest.map(str::trim).parse_next(input)
++}
++

@@ -1,0 +1,640 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.14"
+# dependencies = [
+#   "pydantic>=2,<3",
+#   "tree-sitter>=0.23,<0.26",
+#   "tree-sitter-rust>=0.23,<0.25",
+# ]
+# ///
+"""Review Rust with a jev question set and print the findings as JSON lines: every top-level item in a git repository, the hunks changed since a revision, or each declaration a surface spec adds, judged against a description of the change."""
+
+import argparse
+import asyncio
+import json
+import pathlib
+import re
+import sys
+
+import pydantic
+import tree_sitter
+import tree_sitter_rust
+
+# The question sets and gates files sit beside this script.
+HERE = pathlib.Path(__file__).resolve().parent
+DEFAULT_SET = HERE / "standards.yaml"
+DEFAULT_SPEC_SET = HERE / "surface.yaml"
+
+# Exit status when every item was reviewed, and when some items failed to.
+PARTIAL = 2
+
+# Siblings that belong to the item after them.
+LEADING = {"line_comment", "block_comment", "attribute_item"}
+
+# Items with nothing for the question set to judge.
+SKIPPED = {
+    "use_declaration",
+    "extern_crate_declaration",
+    "inner_attribute_item",
+    "line_comment",
+    "block_comment",
+    "attribute_item",
+    "empty_statement",
+}
+
+RUST = tree_sitter.Language(tree_sitter_rust.language())
+
+
+class UserError(Exception):
+    pass
+
+
+class Gates(pydantic.BaseModel):
+    threshold: float
+    gate: float
+    gates: dict[str, list[str]]
+
+
+Answers = pydantic.RootModel[dict[str, float]]
+
+
+class Item(pydantic.BaseModel):
+    file: str
+    start: int
+    end: int
+    name: str
+    context: str
+    text: str
+    # A changed hunk as git printed it, removed lines left out; reviewed in place of `text`.
+    hunk: str | None = None
+    # The whole state jev is asked about, in place of the diff.
+    state: str | None = None
+
+    @property
+    def diff(self):
+        if self.hunk is not None:
+            return "\n".join(
+                [
+                    f"diff --git a/{self.file} b/{self.file}",
+                    f"--- a/{self.file}",
+                    f"+++ b/{self.file}",
+                    self.hunk,
+                ]
+            )
+        lines = self.text.splitlines()
+        header = (
+            f"@@ -0,0 +{self.start},{len(lines)} @@ {self.context}".rstrip()
+        )
+        return "\n".join(
+            [
+                f"diff --git a/{self.file} b/{self.file}",
+                f"--- a/{self.file}",
+                f"+++ b/{self.file}",
+                header,
+                *(f"+{line}" for line in lines),
+            ]
+        )
+
+
+class Finding(pydantic.BaseModel):
+    file: str
+    start: int
+    end: int
+    item: str
+    question: str
+    probability: float
+    asks: str
+    violation: str
+    accepted: str
+
+
+class Failure(pydantic.BaseModel):
+    file: str
+    start: int
+    item: str
+    error: str
+
+
+def json_dumps(data):
+    return json.dumps(data, ensure_ascii=False, sort_keys=True)
+
+
+async def run(*argv, stdin=None, cwd=None):
+    proc = await asyncio.create_subprocess_exec(
+        *argv,
+        cwd=cwd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate(stdin)
+    return proc.returncode, stdout.decode(), stderr.decode()
+
+
+def is_test(node, source):
+    return node.type == "attribute_item" and b"cfg(test)" in source[
+        node.start_byte : node.end_byte
+    ].replace(b" ", b"")
+
+
+def leading(node):
+    """The comments and attributes directly above `node`, top first."""
+    found = []
+    sibling = node.prev_sibling
+    while sibling is not None and sibling.type in LEADING:
+        below = found[0] if found else node
+        if below.start_point[0] - sibling.end_point[0] > 1:
+            break
+        found.insert(0, sibling)
+        sibling = sibling.prev_sibling
+    return found
+
+
+def name_of(node, source):
+    name = node.child_by_field_name("name")
+    if name is None:
+        name = node.child_by_field_name("type")
+    label = source[name.start_byte : name.end_byte].decode() if name else ""
+    return f"{node.type.removesuffix('_item')} {label}".strip()
+
+
+def header_of(node, source):
+    body = node.child_by_field_name("body")
+    end = body.start_byte if body is not None else node.end_byte
+    return " ".join(source[node.start_byte : end].decode().split())
+
+
+def items(nodes, source, path, context=""):
+    lines = source.decode().splitlines()
+    for node in nodes:
+        if node.type in SKIPPED:
+            continue
+        above = leading(node)
+        if any(is_test(a, source) for a in above):
+            continue
+        body = node.child_by_field_name("body")
+        if node.type == "mod_item" and body is not None:
+            yield from items(
+                body.named_children, source, path, header_of(node, source)
+            )
+            continue
+        if node.type in ("impl_item", "trait_item") and body is not None:
+            methods = [
+                c
+                for c in body.named_children
+                if c.type in ("function_item", "function_signature_item")
+            ]
+            if methods:
+                yield from items(
+                    methods, source, path, header_of(node, source)
+                )
+                continue
+        start = (above[0] if above else node).start_point[0]
+        end = node.end_point[0]
+        yield Item(
+            file=path,
+            start=start + 1,
+            end=end + 1,
+            name=name_of(node, source),
+            context=context,
+            text="\n".join(lines[start : end + 1]),
+        )
+
+
+def merge_constants(scanned):
+    """Consecutive const and static items as one item, so each costs one review together."""
+    merged = []
+    for item in scanned:
+        previous = merged[-1] if merged else None
+        if (
+            previous is not None
+            and previous.file == item.file
+            and previous.context == item.context
+            and previous.name.split()[0] in ("const", "static")
+            and item.name.split()[0] in ("const", "static")
+            and item.start - previous.end <= 2
+        ):
+            gap = "\n" * (item.start - previous.end)
+            merged[-1] = previous.model_copy(
+                update={
+                    "end": item.end,
+                    "name": f"{previous.name}, {item.name}",
+                    "text": previous.text + gap + item.text,
+                }
+            )
+        else:
+            merged.append(item)
+    return merged
+
+
+HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
+TEST_MODULE = "#[cfg(test)]"
+
+
+def test_cutoff(source):
+    """The line number of the first test module, after the last line when there is none."""
+    lines = source.decode(errors="replace").splitlines()
+    return next(
+        (n for n, line in enumerate(lines, 1) if line == TEST_MODULE),
+        len(lines) + 1,
+    )
+
+
+def hunks(diff, cutoff):
+    """Each hunk of one file's diff with its removed lines and test code left out."""
+    current = None
+    for line in diff.splitlines():
+        header = HUNK_HEADER.match(line)
+        if header:
+            if current is not None:
+                yield current
+            current = {
+                "start": int(header[1]),
+                "line": int(header[1]),
+                "name": header[3].strip(),
+                "lines": [line],
+            }
+            continue
+        if current is None or line.startswith(("-", "\\")):
+            continue
+        if current["line"] < cutoff:
+            current["lines"].append(line)
+        current["line"] += 1
+    if current is not None:
+        yield current
+
+
+async def changed_items(root, pathspec, base):
+    if base.startswith("-"):
+        raise UserError(f"base {base!r} is not a revision")
+    code, stdout, stderr = await run(
+        "git", "merge-base", base, "HEAD", cwd=root
+    )
+    if code != 0:
+        raise UserError(f"git merge-base {base} HEAD: {stderr.strip()}")
+    merge_base = stdout.strip()
+    code, stdout, stderr = await run(
+        "git",
+        "diff",
+        "-W",
+        "--no-color",
+        "--no-ext-diff",
+        "--relative",
+        merge_base,
+        "--",
+        pathspec,
+        cwd=root,
+    )
+    if code != 0:
+        raise UserError(f"git diff {merge_base}: {stderr.strip()}")
+    changed = []
+    for file_diff in re.split(r"^(?=diff --git )", stdout, flags=re.M):
+        target = re.search(r"^\+\+\+ b/(.+)$", file_diff, flags=re.M)
+        if target is None:
+            continue
+        name = target[1]
+        cutoff = test_cutoff((root / name).read_bytes())
+        for hunk in hunks(file_diff, cutoff):
+            if not any(line.startswith("+") for line in hunk["lines"][1:]):
+                continue
+            changed.append(
+                Item(
+                    file=name,
+                    start=hunk["start"],
+                    end=hunk["line"] - 1,
+                    name=hunk["name"] or "hunk",
+                    context="",
+                    text="",
+                    hunk="\n".join(hunk["lines"]),
+                )
+            )
+    code, stdout, stderr = await run(
+        "git",
+        "ls-files",
+        "-z",
+        "--others",
+        "--exclude-standard",
+        "--",
+        pathspec,
+        cwd=root,
+    )
+    if code != 0:
+        raise UserError(f"git ls-files --others in {root}: {stderr.strip()}")
+    untracked = [name for name in stdout.split("\0") if name]
+    return changed, untracked
+
+
+SPEC_SECTIONS = ("## Additions", "## Declarations")
+
+SPEC_STATE = """Description of the change:
+{description}
+
+Every declaration the change adds, from its surface spec:
+{additions}
+
+Declaration under review, in {file}:
+```rust
+{declaration}
+```
+"""
+
+
+def spec_items(spec, description, parser):
+    """Each declaration under the spec's `## Additions`, or `## Declarations` in a spec of
+    whole files, its lines counted in the spec."""
+    lines = spec.splitlines()
+    sections = [n for n, line in enumerate(lines) if line in SPEC_SECTIONS]
+    if not sections:
+        raise UserError(
+            "the spec has no ## Additions or ## Declarations section"
+        )
+    begin = sections[0]
+    end = next(
+        (
+            i
+            for i in range(begin + 1, len(lines))
+            if lines[i].startswith("## ")
+        ),
+        len(lines),
+    )
+    additions = "\n".join(lines[begin:end]).strip()
+    found = []
+    file = None
+    i = begin + 1
+    while i < end:
+        line = lines[i].strip()
+        if line.startswith("### "):
+            file = line.removeprefix("### ").strip()
+        elif line == "```rust":
+            close = next(
+                (j for j in range(i + 1, end) if lines[j].strip() == "```"),
+                None,
+            )
+            if close is None:
+                raise UserError(
+                    f"the rust block at spec line {i + 1} is not closed"
+                )
+            if file is None:
+                raise UserError(
+                    f"the rust block at spec line {i + 1} has no ### file heading"
+                )
+            source = "\n".join(lines[i + 1 : close]).encode()
+            tree = parser.parse(source)
+            for item in items(tree.root_node.named_children, source, file):
+                declaration = (
+                    f"{item.context} {{\n{item.text}\n}}"
+                    if item.context
+                    else item.text
+                )
+                found.append(
+                    item.model_copy(
+                        update={
+                            "start": item.start + i + 1,
+                            "end": item.end + i + 1,
+                            "state": SPEC_STATE.format(
+                                description=description,
+                                additions=additions,
+                                file=file,
+                                declaration=declaration,
+                            ),
+                        }
+                    )
+                )
+            i = close
+        i += 1
+    return found
+
+
+async def rust_files(root, pathspec):
+    """The tracked and untracked files matching `pathspec`, leaving out those git ignores."""
+    code, stdout, stderr = await run(
+        "git",
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--",
+        pathspec,
+        cwd=root,
+    )
+    if code != 0:
+        raise UserError(f"git ls-files in {root}: {stderr.strip()}")
+    return [name for name in stdout.split("\0") if name]
+
+
+def describe(question):
+    instructions = question.get("instructions")
+    if isinstance(instructions, dict):
+        asks = (
+            instructions.get("statement") or instructions.get("question") or ""
+        )
+    else:
+        asks = instructions or ""
+    criteria = question.get("criteria")
+    if not isinstance(criteria, dict):
+        criteria = {}
+    return asks, criteria.get("true", ""), criteria.get("false", "")
+
+
+async def descriptions(question_set):
+    code, stdout, stderr = await run(
+        "jev",
+        "ask",
+        "-p",
+        "typesafe",
+        "--dry-run",
+        "-q",
+        str(question_set),
+        stdin=b"x",
+    )
+    if code != 0:
+        raise UserError(f"jev ask --dry-run {question_set}: {stderr.strip()}")
+    return {
+        name: describe(question)
+        for name, question in json.loads(stdout)["questions"].items()
+    }
+
+
+def findings(item, root, answers, gates, described):
+    gate_questions = {g for names in gates.gates.values() for g in names}
+    for question, probability in answers.items():
+        if question in gate_questions or probability < gates.threshold:
+            continue
+        if question in gates.gates and all(
+            answers.get(g, 0) >= gates.gate for g in gates.gates[question]
+        ):
+            continue
+        asks, violation, accepted = described.get(question, ("", "", ""))
+        yield Finding(
+            file=str(root / item.file),
+            start=item.start,
+            end=item.end,
+            item=item.name,
+            question=question,
+            probability=round(probability, 2),
+            asks=asks,
+            violation=violation,
+            accepted=accepted,
+        )
+
+
+async def ask(item, question_set, gate):
+    async with gate:
+        code, stdout, stderr = await run(
+            "jev",
+            "ask",
+            "-p",
+            "typesafe",
+            "-q",
+            str(question_set),
+            stdin=(
+                item.state if item.state is not None else item.diff
+            ).encode(),
+        )
+    if code != 0:
+        return Failure(
+            file=item.file,
+            start=item.start,
+            item=item.name,
+            error=stderr.strip(),
+        )
+    return Answers.model_validate_json(stdout).root
+
+
+async def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "path",
+        nargs="?",
+        type=pathlib.Path,
+        help="a .rs file, or a directory whose .rs files are scanned, inside a git repository",
+    )
+    parser.add_argument(
+        "--spec",
+        type=pathlib.Path,
+        help="a Rust surface spec, or - for stdin; reviews each declaration under ## Additions "
+        "instead of PATH, and findings give its lines in the spec",
+    )
+    parser.add_argument(
+        "--description",
+        help="what the change is for, in a few sentences; required with --spec",
+    )
+    parser.add_argument(
+        "--set",
+        dest="question_set",
+        type=pathlib.Path,
+        help=f"question set; default: {DEFAULT_SET.name}, or {DEFAULT_SPEC_SET.name} with --spec",
+    )
+    parser.add_argument(
+        "--gates",
+        type=pathlib.Path,
+        help="gates file; default: the question set's path with .gates.json",
+    )
+    parser.add_argument(
+        "--base",
+        help="review only what changed from this revision's merge-base with HEAD to the "
+        "working tree, plus untracked files; HEAD reviews uncommitted changes",
+    )
+    parser.add_argument("--concurrency", type=int, default=8)
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print each item's diff instead of asking jev",
+    )
+    args = parser.parse_args()
+
+    if args.spec is not None:
+        if args.path is not None or args.base is not None:
+            raise UserError("--spec takes no PATH and no --base")
+        if not args.description:
+            raise UserError("--spec needs --description")
+        spec = (
+            sys.stdin.read()
+            if str(args.spec) == "-"
+            else args.spec.expanduser().read_text()
+        )
+        question_set = args.question_set or DEFAULT_SPEC_SET
+        gates = Gates.model_validate_json(
+            (args.gates or question_set.with_suffix(".gates.json")).read_text()
+        )
+        scanned = spec_items(spec, args.description, tree_sitter.Parser(RUST))
+        return await review(
+            scanned,
+            pathlib.Path(),
+            question_set,
+            gates,
+            args.concurrency,
+            args.dry_run,
+        )
+    if args.path is None:
+        raise UserError("give a PATH, or --spec")
+    question_set = args.question_set or DEFAULT_SET
+    target = args.path.expanduser().resolve()
+    if target.is_dir():
+        root, pathspec = target, "*.rs"
+    elif target.is_file() and target.suffix == ".rs":
+        root, pathspec = target.parent, target.name
+    else:
+        raise UserError(f"{target} is neither a directory nor a .rs file")
+    gates_path = args.gates or question_set.with_suffix(".gates.json")
+    gates = Gates.model_validate_json(gates_path.read_text())
+
+    rust = tree_sitter.Parser(RUST)
+    if args.base is None:
+        changed, whole = [], await rust_files(root, pathspec)
+        if pathspec != "*.rs" and not whole:
+            raise UserError(f"{target} is ignored by git")
+    else:
+        changed, whole = await changed_items(root, pathspec, args.base)
+    scanned = []
+    for name in whole:
+        source = (root / name).read_bytes()
+        tree = rust.parse(source)
+        scanned.extend(items(tree.root_node.named_children, source, name))
+    scanned = changed + merge_constants(scanned)
+    return await review(
+        scanned, root, question_set, gates, args.concurrency, args.dry_run
+    )
+
+
+async def review(scanned, root, question_set, gates, concurrency, dry_run):
+    if dry_run:
+        for item in scanned:
+            print(
+                item.state if item.state is not None else item.diff, end="\n\n"
+            )
+        print(f"{len(scanned)} items", file=sys.stderr)
+        return 0
+
+    described = await descriptions(question_set)
+    gate = asyncio.Semaphore(concurrency)
+    results = await asyncio.gather(
+        *(ask(item, question_set, gate) for item in scanned)
+    )
+    found = 0
+    failures = []
+    for item, result in zip(scanned, results):
+        if isinstance(result, Failure):
+            failures.append(
+                result.model_copy(update={"file": str(root / result.file)})
+            )
+            continue
+        for finding in findings(item, root, result, gates, described):
+            found += 1
+            print(json_dumps(finding.model_dump()))
+    for failure in failures:
+        print(json_dumps({"failure": failure.model_dump()}))
+    print(
+        f"{len(scanned)} items reviewed in {root}, {found} findings, {len(failures)} failed",
+        file=sys.stderr,
+    )
+    return PARTIAL if failures else 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(asyncio.run(main()))
+    except UserError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)

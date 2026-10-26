@@ -1,0 +1,9 @@
+diff --git a/src/config.rs b/src/config.rs
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -0,0 +1,5 @@
++fn load_config(path: &Path) -> Config {
++    let text = fs::read_to_string(path).unwrap_or_default();
++    let _ = fs::create_dir_all(cache_dir());
++    toml::from_str(&text).unwrap_or_default()
++}

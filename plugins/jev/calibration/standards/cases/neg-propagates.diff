@@ -1,0 +1,10 @@
+diff --git a/src/config.rs b/src/config.rs
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -0,0 +1,6 @@
++fn load_config(path: &Path) -> anyhow::Result<Config> {
++    let text = fs::read_to_string(path)
++        .with_context(|| format!("reading {}", path.display()))?;
++    let config = toml::from_str(&text).context("parsing config")?;
++    Ok(config)
++}

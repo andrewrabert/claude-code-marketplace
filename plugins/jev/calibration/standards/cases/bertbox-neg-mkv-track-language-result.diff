@@ -1,0 +1,20 @@
+diff --git a/src/mkvmerge.rs b/src/mkvmerge.rs
+--- a/src/mkvmerge.rs
++++ b/src/mkvmerge.rs
+@@ -0,0 +56,16 @@
++#[derive(Default, Deserialize)]
++pub struct TrackProperties {
++    pub uid: Option<u64>,
++    pub language: Option<String>,
++    pub track_name: Option<String>,
++}
++
++impl Track {
++    /// The ISO 639-2 language. An error when mkvmerge reported none.
++    pub fn language(&self) -> Result<&str> {
++        self.properties
++            .language
++            .as_deref()
++            .with_context(|| format!("track {} has no language", self.id))
++    }
++}

@@ -1,0 +1,56 @@
+diff --git a/src/tools/git/sync/source.rs b/src/tools/git/sync/source.rs
+--- a/src/tools/git/sync/source.rs
++++ b/src/tools/git/sync/source.rs
+@@ -0,0 +179,52 @@
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn parsed(repo: &str) -> (String, String) {
++        let source: Source = repo.parse().expect("valid repo");
++        (source.host.to_string(), source.path)
++    }
++
++    fn error(repo: &str) -> String {
++        let Err(error) = repo.parse::<Source>() else {
++            panic!("{repo} is a valid repo");
++        };
++        error.to_string()
++    }
++
++    fn pair(host: &str, path: &str) -> (String, String) {
++        (host.to_owned(), path.to_owned())
++    }
++
++    #[test]
++    fn host_slash_path() {
++        assert_eq!(
++            parsed("example.com/owner/repo"),
++            pair("example.com", "owner/repo")
++        );
++    }
++
++    #[test]
++    fn host_without_path_is_an_error() {
++        assert_eq!(error("repo"), "invalid repo");
++    }
++
++    #[test]
++    fn repo_is_lowercased() {
++        assert_eq!(
++            parsed("HTTPS://GitHub.com/Owner/Repo"),
++            pair("github", "owner/repo")
++        );
++    }
++
++    #[test]
++    fn github_is_trimmed_to_owner_and_repo() {
++        assert_eq!(
++            parsed("https://github.com/owner/repo/tree/main"),
++            pair("github", "owner/repo")
++        );
++        assert_eq!(
++            parsed("https://www.github.com/owner/repo/issues/1"),
++            pair("github", "owner/repo")
++        );
++    }

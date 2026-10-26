@@ -1,0 +1,58 @@
+diff --git a/src/platform_abi/src/app.rs b/src/platform_abi/src/app.rs
+--- a/src/platform_abi/src/app.rs
++++ b/src/platform_abi/src/app.rs
+@@ -0,0 +4,54 @@
++#[derive(Copy, Clone, PartialEq, Eq, Debug)]
++pub struct MenuSerial(usize);
++
++impl MenuSerial {
++    pub fn new(value: usize) -> MenuSerial {
++        MenuSerial(value)
++    }
++}
++
++pub enum AppMsg {
++    OpenContextMenu(MenuSerial, MenuBuilder),
++    OpenDropdown(MenuSerial, MenuBuilder),
++    CloseMenu(MenuSerial),
++}
++
++pub struct App {
++    channel: Box<dyn Fn(AppMsg) + Send + Sync>,
++    next_serial: Box<dyn Fn() -> MenuSerial + Send + Sync>,
++}
++
++impl App {
++    pub fn new<T: From<AppMsg> + Send + 'static>(
++        channel: std::sync::mpsc::Sender<T>,
++        next_serial: impl Fn() -> MenuSerial + Send + Sync + 'static,
++    ) -> App {
++        App {
++            channel: Box::new(move |msg| drop(channel.send(T::from(msg)))),
++            next_serial: Box::new(next_serial),
++        }
++    }
++
++    pub fn new_menu(&self, anchor: LogicalPoint) -> MenuBuilder {
++        MenuBuilder {
++            serial: (self.next_serial)(),
++            anchor,
++            items: Vec::new(),
++            on_closed: Vec::new(),
++            current: None,
++            width: None,
++        }
++    }
++
++    pub fn open_context_menu(&self, builder: MenuBuilder) {
++        (self.channel)(AppMsg::OpenContextMenu(builder.serial, builder));
++    }
++
++    pub fn open_dropdown(&self, builder: MenuBuilder) {
++        (self.channel)(AppMsg::OpenDropdown(builder.serial, builder));
++    }
++
++    pub fn close_menu(&self, serial: MenuSerial) {
++        (self.channel)(AppMsg::CloseMenu(serial));
++    }
++}

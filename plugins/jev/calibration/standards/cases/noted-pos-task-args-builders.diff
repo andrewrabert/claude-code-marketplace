@@ -1,0 +1,50 @@
+diff --git a/crates/core/src/tools.rs b/crates/core/src/tools.rs
+--- a/crates/core/src/tools.rs
++++ b/crates/core/src/tools.rs
+@@ -0,0 +600,46 @@
++impl CreateTaskArgs {
++    pub fn new(dir: DirPath, task: TaskTitle) -> CreateTaskArgs {
++        CreateTaskArgs {
++            dir,
++            task,
++            notes: TaskBody::default(),
++            due: None,
++        }
++    }
++
++    pub fn notes(mut self, notes: TaskBody) -> CreateTaskArgs {
++        self.notes = notes;
++        self
++    }
++
++    pub fn due(mut self, due: TaskDue) -> CreateTaskArgs {
++        self.due = Some(due);
++        self
++    }
++}
++
++impl GetTasksArgs {
++    pub fn new(prefix: DirPath) -> GetTasksArgs {
++        GetTasksArgs {
++            prefix,
++            body: false,
++            include_completed: false,
++        }
++    }
++
++    pub fn body(mut self, body: bool) -> GetTasksArgs {
++        self.body = body;
++        self
++    }
++
++    pub fn include_completed(mut self, include_completed: bool) -> GetTasksArgs {
++        self.include_completed = include_completed;
++        self
++    }
++}
++
++impl MoveTaskArgs {
++    pub fn new(path: TaskPath, dest: DirPath) -> MoveTaskArgs {
++        MoveTaskArgs { path, dest }
++    }
++}

@@ -1,0 +1,13 @@
+diff --git a/src/sync.rs b/src/sync.rs
+--- a/src/sync.rs
++++ b/src/sync.rs
+@@ -0,0 +1,9 @@
++fn sync_all(repos: &[Repo]) {
++    for repo in repos {
++        if let Err(e) = repo.fetch() {
++            log::warn!("fetch {} failed: {e}", repo.name);
++            continue;
++        }
++        println!("synced {}", repo.name);
++    }
++}

@@ -1,0 +1,51 @@
+diff --git a/src/platform_abi/src/lang.rs b/src/platform_abi/src/lang.rs
+--- a/src/platform_abi/src/lang.rs
++++ b/src/platform_abi/src/lang.rs
+@@ -0,0 +30,47 @@
++const LOCALES: &[(&str, Locale)] = &[(
++    "en-us",
++    Locale {
++        back: "Back",
++        forward: "Forward",
++        reload: "Reload",
++        undo: "Undo",
++        redo: "Redo",
++        cut: "Cut",
++        copy: "Copy",
++        paste: "Paste",
++        select_all: "Select All",
++    },
++)];
++
++const DEFAULT: Locale = LOCALES[position("en-us")].1;
++
++/// `LOCALES.len()` for a missing tag, so indexing `LOCALES` with it fails
++/// const evaluation.
++const fn position(tag: &str) -> usize {
++    let mut i = 0;
++    while i < LOCALES.len() {
++        if tag_eq(LOCALES[i].0.as_bytes(), tag.as_bytes()) {
++            return i;
++        }
++        i += 1;
++    }
++    i
++}
++
++const fn tag_eq(a: &[u8], b: &[u8]) -> bool {
++    if a.len() != b.len() {
++        return false;
++    }
++    let mut i = 0;
++    while i < a.len() {
++        if a[i] != b[i] {
++            return false;
++        }
++        i += 1;
++    }
++    true
++}
++
++pub fn locale() -> Locale {
++    DEFAULT
++}

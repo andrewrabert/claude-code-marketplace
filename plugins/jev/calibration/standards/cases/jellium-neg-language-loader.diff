@@ -1,0 +1,21 @@
+diff --git a/src/platform_abi/src/lang.rs b/src/platform_abi/src/lang.rs
+--- a/src/platform_abi/src/lang.rs
++++ b/src/platform_abi/src/lang.rs
+@@ -0,0 +92,17 @@
++pub fn detect() -> Result<LanguageLoader, I18nEmbedError> {
++    LanguageLoader::new(&DesktopLanguageRequester::requested_languages())
++}
++
++/// The negotiated languages' bundles; clones share them.
++#[derive(Clone)]
++pub struct LanguageLoader(Arc<FluentLanguageLoader>);
++
++impl LanguageLoader {
++    pub fn new(requested: &[LanguageIdentifier]) -> Result<LanguageLoader, I18nEmbedError> {
++        let loader = fluent_language_loader!();
++        i18n_embed::select(&loader, &Localizations, requested)?;
++        Ok(LanguageLoader(Arc::new(loader)))
++    }
++
++    pub fn language(&self) -> LanguageIdentifier {
++        i18n_embed::LanguageLoader::current_language(&*self.0)

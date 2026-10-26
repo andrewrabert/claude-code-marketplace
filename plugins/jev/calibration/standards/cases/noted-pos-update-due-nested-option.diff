@@ -1,0 +1,22 @@
+diff --git a/crates/core/src/tools.rs b/crates/core/src/tools.rs
+--- a/crates/core/src/tools.rs
++++ b/crates/core/src/tools.rs
+@@ -0,0 +610,18 @@
++    #[arg(long)]
++    #[serde(
++        default,
++        deserialize_with = "present",
++        skip_serializing_if = "Option::is_none"
++    )]
++    #[schemars(with = "Option<TaskDue>")]
++    due: Option<Option<TaskDue>>,
++}
++
++// a field sent as null arrives as Some(None); a missing one stays None via `default`
++fn present<'de, T, D>(d: D) -> std::result::Result<Option<T>, D::Error>
++where
++    T: Deserialize<'de>,
++    D: serde::Deserializer<'de>,
++{
++    T::deserialize(d).map(Some)
++}

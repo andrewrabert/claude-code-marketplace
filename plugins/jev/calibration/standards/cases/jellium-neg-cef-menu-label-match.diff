@@ -1,0 +1,27 @@
+diff --git a/src/jfn_cef/src/client.rs b/src/jfn_cef/src/client.rs
+--- a/src/jfn_cef/src/client.rs
++++ b/src/jfn_cef/src/client.rs
+@@ -0,0 +252,23 @@
++fn menu_label(command_id: c_int) -> Option<ContextMenuLabel> {
++    const BACK: c_int = sys::cef_menu_id_t::MENU_ID_BACK as c_int;
++    const FORWARD: c_int = sys::cef_menu_id_t::MENU_ID_FORWARD as c_int;
++    const RELOAD: c_int = sys::cef_menu_id_t::MENU_ID_RELOAD as c_int;
++    const UNDO: c_int = sys::cef_menu_id_t::MENU_ID_UNDO as c_int;
++    const REDO: c_int = sys::cef_menu_id_t::MENU_ID_REDO as c_int;
++    const CUT: c_int = sys::cef_menu_id_t::MENU_ID_CUT as c_int;
++    const COPY: c_int = sys::cef_menu_id_t::MENU_ID_COPY as c_int;
++    const PASTE: c_int = sys::cef_menu_id_t::MENU_ID_PASTE as c_int;
++    const SELECT_ALL: c_int = sys::cef_menu_id_t::MENU_ID_SELECT_ALL as c_int;
++    match command_id {
++        BACK => Some(ContextMenuLabel::Back),
++        FORWARD => Some(ContextMenuLabel::Forward),
++        RELOAD => Some(ContextMenuLabel::Reload),
++        UNDO => Some(ContextMenuLabel::Undo),
++        REDO => Some(ContextMenuLabel::Redo),
++        CUT => Some(ContextMenuLabel::Cut),
++        COPY => Some(ContextMenuLabel::Copy),
++        PASTE => Some(ContextMenuLabel::Paste),
++        SELECT_ALL => Some(ContextMenuLabel::SelectAll),
++        _ => None,
++    }
++}

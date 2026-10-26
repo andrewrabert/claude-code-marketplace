@@ -1,0 +1,21 @@
+diff --git a/crates/core/src/fs/store.rs b/crates/core/src/fs/store.rs
+--- a/crates/core/src/fs/store.rs
++++ b/crates/core/src/fs/store.rs
+@@ -0,0 +151,17 @@
++    // the trash mirrors the store: the entry lands under the same path it was
++    // removed from
++    pub(crate) async fn remove(&self, at: &WriteablePath) -> Result<()> {
++        let from = at.to_store_path(&self.inner.base)?;
++        let to = at.to_store_path(&self.inner.base.join(TRASH))?;
++        let Some(name) = to.file_name().map(|name| name.to_string_lossy().into_owned()) else {
++            unreachable!("a writeable path is never the store root")
++        };
++        let _guard = self.inner.writes.hold().await;
++        for candidate in spare_names(&name) {
++            match platform::relocate(&from, &to.with_file_name(candidate)).await {
++                Err(NotedError::Conflict) => continue,
++                other => return other,
++            }
++        }
++        Err(NotedError::Conflict)
++    }

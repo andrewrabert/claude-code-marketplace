@@ -1,0 +1,57 @@
+diff --git a/src/tools/cdemu_tool/mod.rs b/src/tools/cdemu_tool/mod.rs
+--- a/src/tools/cdemu_tool/mod.rs
++++ b/src/tools/cdemu_tool/mod.rs
+@@ -0,0 +45,53 @@
++fn runtime_dir() -> Result<PathBuf> {
++    env::var_os("XDG_RUNTIME_DIR")
++        .map(PathBuf::from)
++        .context("XDG_RUNTIME_DIR is not set")
++}
++
++fn remove(dev_sr: &str) -> Result<()> {
++    let device = Device::all(&runtime_dir()?)?
++        .into_iter()
++        .find(|device| device.dev_sr == dev_sr)
++        .context("device not found")?;
++    device.name.stop()
++}
++
++fn status(json: bool) -> Result<()> {
++    let devices = Device::all(&runtime_dir()?)?;
++    if json {
++        return print_json(&devices);
++    }
++    let mut by_dev = BTreeMap::new();
++    for device in &devices {
++        if by_dev.insert(&device.dev_sr, &device.filenames).is_some() {
++            bail!("{} is recorded by more than one unit", device.dev_sr);
++        }
++    }
++    for (dev_sr, filenames) in by_dev {
++        println!("{dev_sr}");
++        for filename in filenames {
++            println!("  {}", filename.display());
++        }
++    }
++    Ok(())
++}
++
++fn systemd_load(files: Vec<PathBuf>) -> Result<()> {
++    let name = UnitName::from_env()?;
++    let dbus_session_bus_address =
++        env::var("DBUS_SESSION_BUS_ADDRESS").context("DBUS_SESSION_BUS_ADDRESS is not set")?;
++    let runtime_directory = unit::runtime_directory()?;
++    let daemon = Daemon::spawn()?;
++    let mapping = daemon.wait_for_mapping()?;
++    daemon.load(&files)?;
++    daemon.wait_until_loaded()?;
++    Device {
++        name,
++        filenames: files,
++        dbus_session_bus_address,
++        dev_sr: mapping.sr,
++        dev_sg: mapping.sg,
++    }
++    .write(&runtime_directory)?;
++    daemon.wait()
++}

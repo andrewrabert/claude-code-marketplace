@@ -1,0 +1,70 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -0,0 +480,66 @@
++/// Real UID from the `Uid:` line of a /proc/PID/status file
++fn parse_uid(status: &str) -> Option<&str> {
++    status
++        .lines()
++        .find_map(|line| line.strip_prefix("Uid:"))?
++        .split_whitespace()
++        .next()
++}
++
++fn get_user_filter() -> Option<String> {
++    let status = fs::read_to_string("/proc/self/status").ok()?;
++    parse_uid(&status).map(String::from)
++}
++
++/// True if any process other than this one and its ancestors has a raw
++/// /proc/PID/cmdline (null-separated argv) for which `matches` returns true
++fn any_process_matches(user_filter: Option<&str>, matches: impl Fn(&str) -> bool) -> bool {
++    let ancestors = get_ancestors();
++    let Ok(entries) = fs::read_dir("/proc") else {
++        return false;
++    };
++
++    for entry in entries.flatten() {
++        let path = entry.path();
++        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
++            continue;
++        };
++
++        let Ok(pid) = name.parse::<u32>() else {
++            continue;
++        };
++
++        if ancestors.contains(&pid) {
++            continue;
++        }
++
++        // Check user filter if specified
++        if let Some(uid) = user_filter {
++            let Ok(status) = fs::read_to_string(path.join("status")) else {
++                continue;
++            };
++            if parse_uid(&status) != Some(uid) {
++                continue;
++            }
++        }
++
++        // Check cmdline for process match
++        if let Ok(cmdline) = fs::read_to_string(path.join("cmdline"))
++            && matches(&cmdline)
++        {
++            return true;
++        }
++    }
++
++    false
++}
++
++fn is_process_running(process: &str, user_filter: Option<&str>) -> bool {
++    any_process_matches(user_filter, |cmdline| {
++        cmdline.replace('\0', " ").contains(process)
++    })
++}
++
++fn is_process_running_regex(re: &regex::Regex, user_filter: Option<&str>) -> bool {
++    any_process_matches(user_filter, |cmdline| re.is_match(cmdline))
++}

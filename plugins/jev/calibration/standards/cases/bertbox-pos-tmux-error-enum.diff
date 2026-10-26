@@ -1,0 +1,115 @@
+diff --git a/src/tmux.rs b/src/tmux.rs
+--- a/src/tmux.rs
++++ b/src/tmux.rs
+@@ -0,0 +1,111 @@
++use std::env;
++use std::error;
++use std::ffi::OsStr;
++use std::fmt;
++use std::io;
++use std::os::unix::ffi::OsStrExt;
++use std::path::PathBuf;
++use std::process::{Command, ExitStatus, Stdio};
++use std::string::FromUtf8Error;
++
++#[derive(Debug)]
++pub enum Error {
++    NoSocket,
++    Spawn { command: String, source: io::Error },
++    Wait { command: String, source: io::Error },
++    Status { command: String, status: ExitStatus },
++    Output { command: String, source: FromUtf8Error },
++}
++
++impl fmt::Display for Error {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self {
++            Self::NoSocket => write!(f, "TMUX has no socket path"),
++            Self::Spawn { command, .. } => write!(f, "running {command}"),
++            Self::Wait { command, .. } => write!(f, "waiting for {command}"),
++            Self::Status { command, status } => write!(f, "{command} failed: {status}"),
++            Self::Output { command, .. } => write!(f, "reading the output of {command}"),
++        }
++    }
++}
++
++impl error::Error for Error {
++    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
++        match self {
++            Self::Spawn { source, .. } | Self::Wait { source, .. } => Some(source),
++            Self::Output { source, .. } => Some(source),
++            Self::NoSocket | Self::Status { .. } => None,
++        }
++    }
++}
++
++pub fn current_socket() -> Result<PathBuf, Error> {
++    let value = env::var_os("TMUX").ok_or(Error::NoSocket)?;
++    let socket = value
++        .as_bytes()
++        .split(|&byte| byte == b',')
++        .next()
++        .filter(|path| !path.is_empty())
++        .ok_or(Error::NoSocket)?;
++    Ok(PathBuf::from(OsStr::from_bytes(socket)))
++}
++
++pub fn command<I, S>(args: I) -> Command
++where
++    I: IntoIterator<Item = S>,
++    S: AsRef<OsStr>,
++{
++    let mut command = Command::new("tmux");
++    command.args(args);
++    command
++}
++
++pub fn run<I, S>(args: I) -> Result<(), Error>
++where
++    I: IntoIterator<Item = S>,
++    S: AsRef<OsStr>,
++{
++    let mut command = command(args);
++    let status = command.status().map_err(|source| Error::Spawn {
++        command: format!("{command:?}"),
++        source,
++    })?;
++    if !status.success() {
++        return Err(Error::Status {
++            command: format!("{command:?}"),
++            status,
++        });
++    }
++    Ok(())
++}
++
++pub fn capture<I, S>(args: I) -> Result<String, Error>
++where
++    I: IntoIterator<Item = S>,
++    S: AsRef<OsStr>,
++{
++    let mut command = command(args);
++    let describe = format!("{command:?}");
++    let output = command
++        .stdout(Stdio::piped())
++        .spawn()
++        .map_err(|source| Error::Spawn {
++            command: describe.clone(),
++            source,
++        })?
++        .wait_with_output()
++        .map_err(|source| Error::Wait {
++            command: describe.clone(),
++            source,
++        })?;
++    if !output.status.success() {
++        return Err(Error::Status {
++            command: describe,
++            status: output.status,
++        });
++    }
++    String::from_utf8(output.stdout).map_err(|source| Error::Output {
++        command: describe,
++        source,
++    })
++}

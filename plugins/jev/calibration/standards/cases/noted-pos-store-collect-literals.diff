@@ -1,0 +1,49 @@
+diff --git a/crates/core/src/fs/store.rs b/crates/core/src/fs/store.rs
+--- a/crates/core/src/fs/store.rs
++++ b/crates/core/src/fs/store.rs
+@@ -0,0 +221,45 @@
++    // every entry spelled from the walk root: a `.tasks/N` holding its record
++    // is reported as `#N` and an `.logs/S` holding its record as `@S`; the
++    // records themselves are never reported
++    async fn collect(&self, dir: &StdPath, prefix: &str, listing: Listing, out: &mut Vec<String>) {
++        let found = platform::entries(self.base(), dir, false)
++            .await
++            .unwrap_or_default();
++        for Entry { name, is_dir, .. } in found {
++            let (mark, record) = match name.as_str() {
++                ".tasks" if is_dir => ('#', ".task.md"),
++                ".logs" if is_dir => ('@', ".log.md"),
++                ".task.md" | ".log.md" => continue,
++                _ => {
++                    let spelled = format!("{prefix}/{name}");
++                    if !is_dir {
++                        out.push(spelled);
++                    } else if listing.deep {
++                        Box::pin(self.collect(&dir.join(&name), &spelled, listing, out)).await;
++                    }
++                    continue;
++                }
++            };
++            let holder = dir.join(&name);
++            let held = platform::entries(self.base(), &holder, false)
++                .await
++                .unwrap_or_default();
++            for Entry { name, is_dir, .. } in held {
++                let inner = holder.join(&name);
++                let recorded = is_dir
++                    && platform::entries(self.base(), &inner, false)
++                        .await
++                        .unwrap_or_default()
++                        .iter()
++                        .any(|entry| entry.name == record && !entry.is_dir);
++                if !recorded {
++                    continue;
++                }
++                let spelled = format!("{prefix}/{mark}{name}");
++                out.push(spelled.clone());
++                if listing.deep {
++                    Box::pin(self.collect(&inner, &spelled, listing, out)).await;
++                }
++            }
++        }
++    }

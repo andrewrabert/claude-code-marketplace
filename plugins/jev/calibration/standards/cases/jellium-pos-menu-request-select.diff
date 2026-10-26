@@ -1,0 +1,31 @@
+diff --git a/src/platform_abi/src/menu.rs b/src/platform_abi/src/menu.rs
+--- a/src/platform_abi/src/menu.rs
++++ b/src/platform_abi/src/menu.rs
+@@ -0,0 +12,27 @@
++/// Selection value meaning "nothing was chosen".
++pub const MENU_DISMISSED: c_int = -1;
++
++pub struct MenuRequest {
++    pub groups: Arc<Vec<Vec<Item>>>,
++    pub anchor: LogicalPoint,
++    pub width: Option<NonZeroU32>,
++    current: Option<usize>,
++    on_closed: Vec<ChannelValue>,
++}
++
++impl MenuRequest {
++    pub fn current(&self) -> Option<usize> {
++        self.current
++    }
++
++    pub fn select(self, row: usize) -> Result<(), Box<dyn std::error::Error>> {
++        let Some(item) = self.groups.iter().flatten().nth(row) else {
++            return Err(format!("menu row {row} out of range").into());
++        };
++        if !item.enabled {
++            return Err(format!("menu row {row} is disabled").into());
++        }
++        item.value.send();
++        Ok(())
++    }
++}

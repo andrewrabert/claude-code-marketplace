@@ -1,0 +1,13 @@
+diff --git a/src/jfn_rust/src/app.rs b/src/jfn_rust/src/app.rs
+--- a/src/jfn_rust/src/app.rs
++++ b/src/jfn_rust/src/app.rs
+@@ -0,0 +940,9 @@
++    // Linux Chromium ignores CefSettings.locale and reads only the env, so the
++    // negotiated language is pinned there for CEF and its subprocesses.
++    // SAFETY: set before the tokio runtime spawns this process's worker threads.
++    unsafe {
++        std::env::set_var(
++            "LANGUAGE",
++            app.locale().language().to_string().replace('-', "_"),
++        );
++    }

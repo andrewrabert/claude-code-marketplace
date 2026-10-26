@@ -1,0 +1,85 @@
+diff --git a/src/jfn_rust/src/app_menu.rs b/src/jfn_rust/src/app_menu.rs
+--- a/src/jfn_rust/src/app_menu.rs
++++ b/src/jfn_rust/src/app_menu.rs
+@@ -0,0 +14,81 @@
++pub(crate) struct ContextMenuManager {
++    inbox: Sender<Work>,
++}
++
++impl ContextMenuManager {
++    pub(crate) fn new(inbox: Sender<Work>) -> ContextMenuManager {
++        ContextMenuManager { inbox }
++    }
++
++    /// Opens `builder` with the app group appended; `restricted` omits
++    /// Settings. Every `on_closed` value is sent exactly once, after any
++    /// selected value.
++    pub(crate) fn open(&self, builder: ContextMenuBuilder, restricted: bool) {
++        let mut app_items = vec![Item {
++            label: "Toggle Fullscreen".to_owned(),
++            enabled: true,
++            value: ChannelValue::new(self.inbox.clone(), || Work::ToggleFullscreen),
++        }];
++        if !restricted {
++            app_items.push(Item {
++                label: "Settings".to_owned(),
++                enabled: true,
++                value: ChannelValue::new(self.inbox.clone(), || Work::OpenClientSettings),
++            });
++        }
++        app_items.push(Item {
++            label: "Exit".to_owned(),
++            enabled: true,
++            value: ChannelValue::new(self.inbox.clone(), || Work::Exit),
++        });
++        let builder = builder.add_items(app_items);
++
++        let Some(platform) = jfn_platform_abi::try_lease() else {
++            builder.on_closed().iter().for_each(ChannelValue::send);
++            return;
++        };
++        let MenuDelivery::Host(host) = platform.menu_delivery(MenuKind::ContextMenu) else {
++            builder.on_closed().iter().for_each(ChannelValue::send);
++            return;
++        };
++
++        // The platform menu names items by their flat index into the groups.
++        let mut next: c_int = 0;
++        let groups = builder
++            .items()
++            .iter()
++            .map(|group| {
++                group
++                    .iter()
++                    .map(|item| {
++                        let id = next;
++                        next = next.saturating_add(1);
++                        MenuItem {
++                            id,
++                            label: item.label.clone(),
++                            enabled: item.enabled,
++                        }
++                    })
++                    .collect()
++            })
++            .collect();
++        let anchor = builder.anchor();
++        host.open(MenuRequest {
++            groups,
++            x: anchor.x,
++            y: anchor.y,
++            width: 0,
++            initial: MENU_DISMISSED,
++            on_selected: MenuSelection::new(move |id| {
++                if let Some(item) = usize::try_from(id)
++                    .ok()
++                    .and_then(|i| builder.items().iter().flatten().nth(i))
++                    .filter(|item| item.enabled)
++                {
++                    item.value.send();
++                }
++                builder.on_closed().iter().for_each(ChannelValue::send);
++            }),
++        });
++    }
++}

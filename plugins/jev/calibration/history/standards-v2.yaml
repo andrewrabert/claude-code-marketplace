@@ -1,0 +1,128 @@
+# Rust standards: correct by construction, error propagation, domain abstractions.
+# State: one diff hunk with removed lines stripped and test modules removed; judges "+" lines only.
+# Decision in code: silent-failure and propagation-stops-early count only when absence-expected
+# is below 0.5; non-idiomatic-error does not count when panic-only and infallible-panic are both
+# at or above 0.5. Flag at >= 0.8.
+
+forgettable-check:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this Rust diff; other lines are context.
+    statement: An added line requires a caller to remember to perform a check before a value is safe to use, where a type could have enforced it instead.
+  criteria:
+    'true': >-
+      Added code hands out a value together with a separate bool, Option, flag, status field or
+      validation function that a caller must inspect before using the value correctly, and nothing
+      stops a caller from skipping it. Examples are an is_valid() call, an "enabled" flag paired
+      with an action, or an index or id that must be checked against a collection before use.
+    'false': >-
+      Every added value is usable as soon as it exists, or the type system forces the check, for
+      example a newtype with a private constructor, an enum, or a Result the caller must unwrap.
+check-after-construction:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this Rust diff; other lines are context.
+    statement: An added line validates a value after it has already been constructed.
+  criteria:
+    'true': >-
+      Added code builds a struct, enum or other value and later tests whether that value is valid,
+      complete or consistent, for example an assert, an if on its fields, a validate() method,
+      or a debug_assert, because the constructor accepted inputs it should have rejected.
+    'false': >-
+      Added code checks inputs before or while constructing, through a fallible constructor
+      returning Result, or the value cannot be built in an invalid state. Checks on external
+      input such as user text, files or the network before parsing it into a type are not this.
+silent-failure:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this Rust diff; other lines are context.
+    statement: An added line discards an error instead of propagating it.
+  criteria:
+    'true': >-
+      Added code receives a Result or failure and does not pass it to the caller: let _ = on a
+      Result, .ok() that drops the error, unwrap_or, unwrap_or_default, unwrap_or_else returning a
+      fallback, if let Ok without an else that propagates, a match arm that logs the error and
+      continues, or an Err mapped to None, false, an empty value or a default.
+    'false': >-
+      Every error the added code receives is returned to its caller with ? or an explicit Err,
+      or the added code receives no fallible result.
+non-idiomatic-error:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this Rust diff; other lines are context.
+    statement: An added function reports failure through something other than Result.
+  criteria:
+    'true': >-
+      An added function signals that it failed by returning bool, Option, a sentinel number, an
+      empty collection or string, a status enum, by setting an out parameter or field, by logging,
+      or by panicking, where Result with an error type is the Rust way to report that failure.
+    'false': >-
+      Every added function that can fail returns Result, or no added function can fail. An Option
+      that means "absent", not "failed", is not a failure report.
+propagation-stops-early:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this Rust diff; other lines are context.
+    statement: Added code handles an error at a low layer that should have passed it up to a caller.
+  criteria:
+    'true': >-
+      A helper, adapter, callback or library-level function in the added code catches an error and
+      decides what happens next, for example logging it, retrying, substituting a value, or
+      showing it to the user, when the function that called it is the one that knows how to react.
+    'false': >-
+      Added code returns each error upward until it reaches the function that decides the
+      outcome, such as main, an event loop, a top-level request handler or a user-facing action.
+intermediate-abstraction:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this Rust diff; other lines are context.
+    statement: An added type, field, parameter or return value uses a mechanism type where a domain type belongs.
+  criteria:
+    'true': >-
+      Added code passes or stores a domain concept as a raw mechanism type: u32 or i32 or usize
+      ids, String for identifiers or keys, bool flags for modes, tuples, HashMap, channels,
+      callbacks or generic wrappers named Handler, Manager, Data, Info or Helper, where a named
+      type for the concept, such as MenuItemId or a domain enum, would carry the meaning.
+    'false': >-
+      Added types, fields, parameters and return values name the domain concept they hold, or the
+      code is a thin FFI or serialization boundary where raw types are required.
+absence-expected:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this Rust diff; other lines are context.
+    statement: Every default or fallback value in the added lines stands in for a value that is normally absent, not for an error from a failed operation.
+  criteria:
+    'true': >-
+      The fallback replaces a lookup or optional value whose absence is an ordinary outcome, for
+      example a map lookup miss, an optional field or setting, an optional part of a grammar, or a
+      parser alternative that falls through to the next rule by design.
+    'false': >-
+      The fallback replaces the result of an operation that failed, for example a file read, a
+      network call, a parse of required input, or a system call, so the caller never learns it
+      failed.
+infallible-panic:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this Rust diff; other lines are context.
+    statement: Every expect, unwrap or panic in the added lines follows an operation that cannot fail on any input it receives.
+  criteria:
+    'true': >-
+      The operation before each expect or unwrap succeeds for every input, for example a parser
+      built only from parts that accept any text, or a conversion the types already guarantee; or
+      the panic is an assertion inside a test.
+    'false': >-
+      An added expect, unwrap or panic can be reached at run time because the operation before it
+      fails on some input the program can receive, such as user text, a file, or a network
+      response.
+panic-only:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this Rust diff; other lines are context.
+    statement: Every failure the added lines report outside Result is a panic from expect, unwrap or panic!.
+  criteria:
+    'true': >-
+      The added lines contain an expect, unwrap or panic!, and they report no other failure through
+      bool, Option, a sentinel value, an empty value, a status field or a log line.
+    'false': >-
+      The added lines report a failure through bool, Option, a sentinel value, an empty value, a
+      status field or a log line, or they contain no expect, unwrap or panic! at all.

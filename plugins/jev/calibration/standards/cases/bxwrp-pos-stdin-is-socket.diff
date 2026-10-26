@@ -1,0 +1,50 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -0,0 +155,46 @@
++/// A socket on stdin is treated as closed: a spawner can hold one open
++/// without ever writing to it, and stdin is read to EOF before running.
++fn stdin_is_socket() -> bool {
++    use std::os::fd::AsFd;
++    use std::os::unix::fs::FileTypeExt;
++
++    std::io::stdin()
++        .as_fd()
++        .try_clone_to_owned()
++        .map(std::fs::File::from)
++        .and_then(|stdin| stdin.metadata())
++        .is_ok_and(|metadata| metadata.file_type().is_socket())
++}
++
++fn run(
++    target: Target,
++    settings: bxwrp::config::Settings,
++    session: Option<PathBuf>,
++) -> anyhow::Result<()> {
++    let stdin_is_socket = stdin_is_socket();
++    let stdin_is_pipe = !std::io::stdin().is_terminal() && !stdin_is_socket;
++    let invocation = match target {
++        Target::Mcp => None,
++        Target::StdinScript { arg0 } => {
++            let mut bytes = Vec::new();
++            if !stdin_is_socket {
++                std::io::stdin().read_to_end(&mut bytes)?;
++            }
++            let script = String::from_utf8(bytes)
++                .map_err(|_| anyhow::anyhow!("exec: script on stdin is not valid UTF-8"))?;
++            Some((script, arg0, Vec::new(), false))
++        }
++        Target::Invoke { arg0, args } => Some((r#""$0" "$@""#.to_string(), arg0, args, true)),
++    };
++    let stdin = match &invocation {
++        Some((_, _, _, true)) if stdin_is_pipe => {
++            let mut bytes = Vec::new();
++            std::io::stdin().read_to_end(&mut bytes)?;
++            Some(bytes)
++        }
++        _ => None,
++    };
++    let stdin = match stdin {
++        None => ScriptInput::Closed,
++        Some(bytes) => ScriptInput::Bytes(bytes),
++    };

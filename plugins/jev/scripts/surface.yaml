@@ -1,0 +1,98 @@
+# Rust surface spec review: one declaration at a time, before any body exists.
+# State: the change's description, every declaration the spec adds, and the declaration under review.
+# Decision in code: a question is a finding at >= the threshold in surface-v2.gates.json.
+# surface-v1.yaml without not-in-description, name-misses-concept, needless-layer: calibrated in calibration/surface on the
+# jellium-desktop menu-refactor spec, where they raised only false alarms. A spec lists a trait or
+# struct whole when any part changes, so a question about whether the change needs a declaration
+# judges unchanged ones.
+
+raw-mechanism-type:
+  type: noul
+  instructions:
+    task: Judge only the declaration under review. Bodies are omitted by design.
+    statement: A field, parameter or return type in the declaration uses a raw mechanism type where a type for the domain concept belongs.
+  criteria:
+    'true': >-
+      The declaration carries a domain concept as a primitive or generic container: an integer
+      id, index or flag, a String key or name, a bool mode, a tuple, an Option or Vec of raw
+      values, or a map, where a named struct, newtype or enum for that concept would carry its
+      meaning and its invariants.
+    'false': >-
+      Every field, parameter and return type names the concept it holds, or the declaration sits
+      at an FFI or serialization boundary whose types are fixed by the other side.
+failure-outside-result:
+  type: noul
+  instructions:
+    task: Judge only the declaration under review. Bodies are omitted by design.
+    statement: The declaration's signature reports a failure through something other than Result.
+  criteria:
+    'true': >-
+      A function that can fail returns bool, Option, a sentinel number, an empty collection or a
+      status value to say that it failed, or returns nothing where a failure has to reach the
+      caller.
+    'false': >-
+      Every function that can fail returns Result with an error type, an Option return means a
+      value that is ordinarily absent, or the declaration has no fallible function.
+predicate-classifies:
+  type: noul
+  instructions:
+    task: Judge only the declaration under review. Bodies are omitted by design.
+    statement: The declaration returns or takes a bool that says which kind a value is, where an enum or a typed value would carry that kind.
+  criteria:
+    'true': >-
+      The declaration is a predicate such as is_kind(&x) -> bool, takes a filter of type
+      impl Fn(T) -> bool, or has a bool field that tells two kinds of the same thing apart, so
+      callers decide the kind again at each use.
+    'false': >-
+      The kind is a variant of an enum or a distinct type decided once, or the bool is plain state
+      of one value, such as whether it is enabled.
+option-means-absence:
+  type: noul
+  instructions:
+    task: Judge only the declaration under review. Bodies are omitted by design.
+    statement: An Option in the declaration stands for something other than a value being absent.
+  criteria:
+    'true': >-
+      An Option field, parameter or return type encodes a state, a mode, "not computed yet", "use
+      the default", or one of several kinds, or two Options in the declaration are set together
+      or exclusively.
+    'false': >-
+      Every Option means only that the value may be absent, or the declaration has no Option.
+forgettable-check:
+  type: noul
+  instructions:
+    task: Judge only the declaration under review. Bodies are omitted by design.
+    statement: The declaration makes callers remember a check before a value is safe to use, where a type could enforce it.
+  criteria:
+    'true': >-
+      The declaration hands out a value together with a separate validity flag, status field,
+      is_valid method or index that callers must check before using the value, and nothing in the
+      types stops a caller from skipping it.
+    'false': >-
+      Every value is usable as soon as it exists, or the types force the check: a private
+      constructor, an enum, or a Result the caller must handle.
+default-outside-owner:
+  type: noul
+  instructions:
+    task: Judge only the declaration under review. Bodies are omitted by design.
+    statement: The declaration exposes a specific default or fallback choice outside the module that owns it.
+  criteria:
+    'true': >-
+      The declaration is a public constructor, function or field for one specific default or
+      fallback value, so code outside the owning module can pick or repeat the default itself.
+    'false': >-
+      The default stays private to its module and callers reach it only through a function that
+      decides and returns the value, or the declaration exposes no default.
+speculative-generality:
+  type: noul
+  instructions:
+    task: Judge only the declaration under review. Bodies are omitted by design.
+    statement: The declaration generalizes over choices that the described change does not need.
+  criteria:
+    'true': >-
+      The declaration adds a trait, a type parameter, a configuration struct, an extra parameter or
+      a variant for cases that the description and the rest of the spec never use, so only one
+      choice exists in practice.
+    'false': >-
+      Every parameter, type parameter and variant serves a case the description or another
+      declaration in the spec uses.

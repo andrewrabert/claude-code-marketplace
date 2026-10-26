@@ -1,0 +1,30 @@
+diff --git a/src/tools/ud.rs b/src/tools/ud.rs
+--- a/src/tools/ud.rs
++++ b/src/tools/ud.rs
+@@ -0,0 +328,26 @@
++fn unescape_mount_field(field: &str) -> String {
++    let unescaped: Vec<u8> = repeat(0.., mount_field_byte)
++        .parse(field.as_bytes())
++        .expect("every byte is copied when it is not an escape");
++    String::from_utf8_lossy(&unescaped).into_owned()
++}
++
++/// An octal escape's byte, or else the next byte as is.
++fn mount_field_byte(input: &mut &[u8]) -> winnow::Result<u8, EmptyError> {
++    alt((octal_escape, any)).parse_next(input)
++}
++
++/// `\` and three characters that read as an octal byte.
++fn octal_escape(input: &mut &[u8]) -> winnow::Result<u8, EmptyError> {
++    preceded(
++        b'\\',
++        take(3usize).verify_map(|digits: &[u8]| {
++            std::str::from_utf8(digits)
++                .ok()
++                .and_then(|digits| u8::from_str_radix(digits, 8).ok())
++        }),
++    )
++    .parse_next(input)
++}
++
++/// The line of an item in the picker, with the labels in one column.

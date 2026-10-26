@@ -1,0 +1,8 @@
+diff --git a/src/tools/archive/extract/detect.rs b/src/tools/archive/extract/detect.rs
+--- a/src/tools/archive/extract/detect.rs
++++ b/src/tools/archive/extract/detect.rs
+@@ -0,0 +24,4 @@
++/// `start` is the file's first `SIGNATURE_LENGTH` bytes.
++pub fn is_seven_zip(start: &[u8]) -> bool {
++    start.starts_with(SEVEN_ZIP_SIGNATURE)
++}

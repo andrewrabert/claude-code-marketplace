@@ -1,0 +1,73 @@
+diff --git a/src/platform_abi/src/context_menu.rs b/src/platform_abi/src/context_menu.rs
+--- a/src/platform_abi/src/context_menu.rs
++++ b/src/platform_abi/src/context_menu.rs
+@@ -0,0 +76,69 @@
++pub struct ContextMenuBuilder {
++    menu: MenuBuilder,
++    locale: LanguageLoader,
++    items: BTreeMap<ContextMenuLabel, Item>,
++}
++
++impl ContextMenuBuilder {
++    pub(crate) fn new(menu: MenuBuilder, locale: LanguageLoader) -> ContextMenuBuilder {
++        ContextMenuBuilder {
++            menu,
++            locale,
++            items: BTreeMap::new(),
++        }
++    }
++
++    pub fn serial(&self) -> MenuSerial {
++        self.menu.serial()
++    }
++
++    #[must_use]
++    pub fn add(
++        mut self,
++        label: ContextMenuLabel,
++        enabled: bool,
++        value: ChannelValue,
++    ) -> ContextMenuBuilder {
++        let item = Item {
++            label: self.locale.menu_label(label),
++            enabled,
++            value,
++        };
++        self.items.insert(label, item);
++        self
++    }
++
++    #[must_use]
++    pub fn add_on_closed(mut self, value: ChannelValue) -> ContextMenuBuilder {
++        self.menu = self.menu.add_on_closed(value);
++        self
++    }
++}
++
++impl From<ContextMenuBuilder> for MenuBuilder {
++    fn from(builder: ContextMenuBuilder) -> MenuBuilder {
++        let mut navigation = Vec::new();
++        let mut undo = Vec::new();
++        let mut clipboard = Vec::new();
++        let mut app = Vec::new();
++        for (label, item) in builder.items {
++            match label {
++                ContextMenuLabel::Back | ContextMenuLabel::Forward | ContextMenuLabel::Reload => {
++                    navigation.push(item)
++                }
++                ContextMenuLabel::Undo | ContextMenuLabel::Redo => undo.push(item),
++                ContextMenuLabel::Cut
++                | ContextMenuLabel::Copy
++                | ContextMenuLabel::Paste
++                | ContextMenuLabel::SelectAll => clipboard.push(item),
++                ContextMenuLabel::Fullscreen
++                | ContextMenuLabel::Settings
++                | ContextMenuLabel::Exit => app.push(item),
++            }
++        }
++        [navigation, undo, clipboard, app]
++            .into_iter()
++            .filter(|group| !group.is_empty())
++            .fold(builder.menu, MenuBuilder::add_items)
++    }
++}

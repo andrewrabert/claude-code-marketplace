@@ -1,0 +1,122 @@
+diff --git a/src/tools/cdemu_tool/device.rs b/src/tools/cdemu_tool/device.rs
+--- a/src/tools/cdemu_tool/device.rs
++++ b/src/tools/cdemu_tool/device.rs
+@@ -0,0 +1,118 @@
++//! The domain types (device ids, image paths, `Device`, `Devices`).
++use std::collections::BTreeMap;
++use std::collections::btree_map;
++use std::convert::Infallible;
++use std::fmt;
++use std::io;
++use std::path::{self, Path, PathBuf};
++use std::str::FromStr;
++
++use anyhow::Result;
++use serde::ser::SerializeSeq;
++use serde::{Deserialize, Serialize, Serializer};
++
++use crate::tools::cdemu_tool::unit::UnitName;
++
++/// An sr (block) device path, such as `/dev/sr0`.
++#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
++#[serde(transparent)]
++pub struct SrDevice(String);
++
++/// An sg (generic SCSI) device path, such as `/dev/sg0`.
++#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
++#[serde(transparent)]
++pub struct SgDevice(String);
++
++impl From<String> for SrDevice {
++    fn from(value: String) -> Self {
++        Self(value)
++    }
++}
++
++impl FromStr for SrDevice {
++    type Err = Infallible;
++
++    fn from_str(value: &str) -> Result<Self, Self::Err> {
++        Ok(Self(value.to_owned()))
++    }
++}
++
++impl fmt::Display for SrDevice {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str(&self.0)
++    }
++}
++
++impl From<String> for SgDevice {
++    fn from(value: String) -> Self {
++        Self(value)
++    }
++}
++
++impl FromStr for SgDevice {
++    type Err = Infallible;
++
++    fn from_str(value: &str) -> Result<Self, Self::Err> {
++        Ok(Self(value.to_owned()))
++    }
++}
++
++impl fmt::Display for SgDevice {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str(&self.0)
++    }
++}
++
++/// An absolute path to a disc image.
++#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
++#[serde(transparent)]
++pub struct ImagePath(PathBuf);
++
++impl ImagePath {
++    pub fn new(path: &Path) -> io::Result<Self> {
++        Ok(Self(path::absolute(path)?))
++    }
++
++    pub fn as_path(&self) -> &Path {
++        &self.0
++    }
++}
++
++/// The error for an empty image collection.
++#[derive(Debug)]
++pub struct EmptyImages;
++
++impl fmt::Display for EmptyImages {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str("at least one image is required")
++    }
++}
++
++impl std::error::Error for EmptyImages {}
++
++/// A non-empty collection of disc images.
++#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
++#[serde(try_from = "Vec<ImagePath>", into = "Vec<ImagePath>")]
++pub struct Images(Vec<ImagePath>);
++
++impl Images {
++    /// Errors if empty.
++    pub fn new(images: Vec<ImagePath>) -> Result<Self, EmptyImages> {
++        if images.is_empty() {
++            return Err(EmptyImages);
++        }
++        Ok(Self(images))
++    }
++
++    pub fn from_paths<I: IntoIterator<Item = impl AsRef<Path>>>(paths: I) -> Result<Self> {
++        let images = paths
++            .into_iter()
++            .map(|path| ImagePath::new(path.as_ref()))
++            .collect::<io::Result<Vec<_>>>()?;
++        Ok(Self::new(images)?)
++    }
++
++    pub fn as_slice(&self) -> &[ImagePath] {
++        &self.0
++    }
++}

@@ -1,0 +1,10 @@
+diff --git a/src/jfn_cef/src/app.rs b/src/jfn_cef/src/app.rs
+--- a/src/jfn_cef/src/app.rs
++++ b/src/jfn_cef/src/app.rs
+@@ -0,0 +382,6 @@
++struct PopupOptions {
++    options: Vec<String>,
++    selected: i32,
++    selectable: Vec<i32>,
++    anchor: Option<(i32, i32)>,
++}

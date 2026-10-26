@@ -1,0 +1,35 @@
+diff --git a/src/cue.rs b/src/cue.rs
+--- a/src/cue.rs
++++ b/src/cue.rs
+@@ -0,0 +6,31 @@
++pub struct CueSheet {
++    text: String,
++}
++
++impl CueSheet {
++    /// Fails if the sheet needs converting to UTF-8.
++    pub fn new(data: &[u8]) -> Result<Self> {
++        let text = convert(data);
++        if text.as_bytes() != data {
++            bail!("the cue sheet needs converting to UTF-8");
++        }
++        Ok(Self {
++            text: text.into_owned(),
++        })
++    }
++
++    pub fn track_count(&self) -> usize {
++        self.text
++            .lines()
++            .filter(|line| line.trim().starts_with("TRACK "))
++            .count()
++    }
++}
++
++/// A cue sheet converted to UTF-8.
++pub fn convert(data: &[u8]) -> Cow<'_, str> {
++    let mut detector = EncodingDetector::new(Iso2022JpDetection::Allow);
++    detector.feed(data, true);
++    let (text, _, _) = detector.guess(None, Utf8Detection::Allow).decode(data);
++    text
++}

@@ -1,0 +1,20 @@
+diff --git a/src/jfn_rust/src/shell/mod.rs b/src/jfn_rust/src/shell/mod.rs
+--- a/src/jfn_rust/src/shell/mod.rs
++++ b/src/jfn_rust/src/shell/mod.rs
+@@ -0,0 +106,16 @@
++/// The actor's sender, created before any thread exists, so work posted before
++/// the render thread starts is delivered when it does.
++static CHANNEL: OnceLock<Channel> = OnceLock::new();
++
++/// Posts `work` to the render actor. Never drops it: an actor that has not
++/// started yet finds it queued in the channel it takes at spawn.
++pub(crate) fn post(work: Work) {
++    if !CLOSED.load(std::sync::atomic::Ordering::Acquire) {
++        CHANNEL.get_or_init(Channel::new).post(work);
++    }
++}
++
++/// A sender into the actor's queue, usable before the render thread starts.
++pub fn shell_sender() -> std::sync::mpsc::Sender<Work> {
++    CHANNEL.get_or_init(Channel::new).sender()
++}

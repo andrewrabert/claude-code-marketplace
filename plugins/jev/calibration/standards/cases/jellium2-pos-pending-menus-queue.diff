@@ -1,0 +1,65 @@
+diff --git a/src/jfn_cef/src/receiver.rs b/src/jfn_cef/src/receiver.rs
+--- a/src/jfn_cef/src/receiver.rs
++++ b/src/jfn_cef/src/receiver.rs
+@@ -0,0 +10,61 @@
++#[derive(Clone, Copy, Debug)]
++pub(crate) enum CefMsg {
++    /// A context menu item was chosen; always followed by `ContextMenuClosed`.
++    ContextMenuSelected(c_int),
++    ContextMenuClosed,
++}
++
++pub(crate) struct Receiver {
++    inner: Weak<Inner>,
++    channel: std::sync::mpsc::Receiver<CefMsg>,
++}
++
++impl Receiver {
++    pub(crate) fn new(inner: Weak<Inner>, channel: std::sync::mpsc::Receiver<CefMsg>) -> Receiver {
++        Receiver { inner, channel }
++    }
++
++    /// Runs until every sender is dropped.
++    pub(crate) fn run(self) {
++        while let Ok(message) = self.channel.recv() {
++            let Some(inner) = self.inner.upgrade() else {
++                continue;
++            };
++            let session = Arc::clone(&inner.session);
++            session.dispatch(|| {
++                let mut task = CefMsgTask::new(inner, message);
++                let _ = post_task(ThreadId::UI, Some(&mut task));
++            });
++        }
++    }
++}
++
++wrap_task! {
++    struct CefMsgTask {
++        inner: Arc<Inner>,
++        message: CefMsg,
++    }
++    impl Task {
++        fn execute(&self) {
++            self.inner.session.dispatch(|| match self.message {
++                CefMsg::ContextMenuSelected(id) => {
++                    let callback = self
++                        .inner
++                        .pending_menus
++                        .lock()
++                        .front_mut()
++                        .and_then(Option::take);
++                    if let Some(callback) = callback {
++                        callback.cont(id, EventFlags::default());
++                    }
++                }
++                CefMsg::ContextMenuClosed => {
++                    let callback = self.inner.pending_menus.lock().pop_front().flatten();
++                    if let Some(callback) = callback {
++                        callback.cancel();
++                    }
++                }
++            });
++        }
++    }
++}

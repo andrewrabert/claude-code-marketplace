@@ -1,0 +1,75 @@
+diff --git a/src/jfn_cef/src/app_menu.rs b/src/jfn_cef/src/app_menu.rs
+--- a/src/jfn_cef/src/app_menu.rs
++++ b/src/jfn_cef/src/app_menu.rs
+@@ -0,0 +101,71 @@
++/// Wraps the one `RunContextMenuCallback` CEF hands over for a menu.
++pub struct CefMenuGuard {
++    inner: Arc<Inner>,
++    session: Session,
++    callback: Option<RunContextMenuCallback>,
++}
++
++// SAFETY: CEF ref-counts the callback atomically; it is only ever invoked on
++// the CEF UI thread through a posted task.
++unsafe impl Send for CefMenuGuard {}
++
++impl CefMenuGuard {
++    pub(crate) fn new(
++        inner: Arc<Inner>,
++        session: Session,
++        callback: RunContextMenuCallback,
++    ) -> CefMenuGuard {
++        CefMenuGuard {
++            inner,
++            session,
++            callback: Some(callback),
++        }
++    }
++
++    /// Hands the callback to `cont(id)` on the CEF UI thread.
++    fn cont(mut self, id: c_int) {
++        self.post(Some(id));
++    }
++
++    fn post(&mut self, id: Option<c_int>) {
++        let Some(callback) = self.callback.take() else {
++            return;
++        };
++        let inner = Arc::clone(&self.inner);
++        let session = self.session;
++        let authority = Arc::clone(&self.inner.session);
++        authority.dispatch(|| {
++            let mut task = ResolveCefMenuTask::new(inner, session, callback, id);
++            let _ = post_task(ThreadId::UI, Some(&mut task));
++        });
++    }
++}
++
++impl Drop for CefMenuGuard {
++    /// Tells CEF its menu closed, without waiting.
++    fn drop(&mut self) {
++        self.post(None);
++    }
++}
++
++wrap_task! {
++    struct ResolveCefMenuTask {
++        inner: Arc<Inner>,
++        session: Session,
++        callback: RunContextMenuCallback,
++        id: Option<c_int>,
++    }
++    impl Task {
++        fn execute(&self) {
++            self.inner.session.dispatch(|| {
++                if !self.inner.menu_resolve(self.session) {
++                    return;
++                }
++                match self.id {
++                    Some(id) => self.callback.cont(id, EventFlags::default()),
++                    None => self.callback.cancel(),
++                }
++            });
++        }
++    }
++}

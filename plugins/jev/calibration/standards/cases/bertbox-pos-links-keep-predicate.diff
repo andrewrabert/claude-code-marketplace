@@ -1,0 +1,18 @@
+diff --git a/src/tools/dotfiles_link_bin/links.rs b/src/tools/dotfiles_link_bin/links.rs
+--- a/src/tools/dotfiles_link_bin/links.rs
++++ b/src/tools/dotfiles_link_bin/links.rs
+@@ -0,0 +30,14 @@
++    pub fn install(&self, dest: &Path, keep: impl Fn(&OsStr) -> bool) -> Result<()> {
++        for stale in entries_of(dest)? {
++            let linked = stale
++                .file_name()
++                .is_some_and(|name| self.0.contains_key(name) || keep(name));
++            if !linked {
++                fs::remove_file(&stale).with_context(|| format!("removing {}", stale.display()))?;
++            }
++        }
++        for (name, target) in &self.0 {
++            point(&dest.join(name), target)?;
++        }
++        Ok(())
++    }

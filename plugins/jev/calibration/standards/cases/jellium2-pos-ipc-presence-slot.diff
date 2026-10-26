@@ -1,0 +1,14 @@
+diff --git a/src/jfn_cef/src/app.rs b/src/jfn_cef/src/app.rs
+--- a/src/jfn_cef/src/app.rs
++++ b/src/jfn_cef/src/app.rs
+@@ -0,0 +316,10 @@
++                        // `selectedIndex` is present or absent, never negative.
++                        match popup.selected.and_then(|i| i32::try_from(i).ok()) {
++                            Some(selected) => {
++                                reply_args.set_int(1, selected);
++                                reply_args.set_int(6, 1);
++                            }
++                            None => {
++                                reply_args.set_int(6, 0);
++                            }
++                        }

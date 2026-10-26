@@ -1,0 +1,36 @@
+diff --git a/src/tools/mkv_info_recorder/db.rs b/src/tools/mkv_info_recorder/db.rs
+--- a/src/tools/mkv_info_recorder/db.rs
++++ b/src/tools/mkv_info_recorder/db.rs
+@@ -0,0 +10,32 @@
++/// Relative path to `(mtime, size, mkv_info_json)`.
++const FILES: TableDefinition<&str, (f64, u64, &str)> = TableDefinition::new("files");
++
++/// Relative path to `langs_json`.
++const OVERRIDES: TableDefinition<&str, &str> = TableDefinition::new("overrides");
++
++/// The rows of `table` for the recorded path `rel` and every path under it.
++fn under<V: Value + 'static>(
++    table: &ReadOnlyTable<&'static str, V>,
++    rel: &str,
++    mut each: impl FnMut(&str, V::SelfType<'_>) -> Result<()>,
++) -> Result<()> {
++    if rel.is_empty() {
++        for row in table.iter()? {
++            let (name, value) = row?;
++            each(name.value(), value.value())?;
++        }
++        return Ok(());
++    }
++    if let Some(value) = table.get(rel)? {
++        each(rel, value.value())?;
++    }
++    let prefix = format!("{rel}/");
++    for row in table.range(prefix.as_str()..)? {
++        let (name, value) = row?;
++        if !name.value().starts_with(&prefix) {
++            break;
++        }
++        each(name.value(), value.value())?;
++    }
++    Ok(())
++}

@@ -1,0 +1,91 @@
+diff --git a/src/tools/git/sync/source.rs b/src/tools/git/sync/source.rs
+--- a/src/tools/git/sync/source.rs
++++ b/src/tools/git/sync/source.rs
+@@ -0,0 +92,87 @@
++impl FromStr for Source {
++    type Err = anyhow::Error;
++
++    fn from_str(repo: &str) -> anyhow::Result<Self> {
++        let repo = repo.to_lowercase();
++        if !repo.contains(':') {
++            let (host, path) = host_and_path
++                .parse(repo.as_str())
++                .map_err(|_: ParseError<&str, EmptyError>| anyhow!("invalid repo"))?;
++            return Ok(Source {
++                host: Host::named(host),
++                path: path.to_owned(),
++            });
++        }
++
++        let (scheme, netloc, path) = url
++            .parse(repo.as_str())
++            .expect("every url splits into a scheme, a netloc and a path");
++        let segments: Vec<&str> = path.split('/').collect();
++        let owned = |name: &str| {
++            if segments.len() < 2 {
++                bail!("invalid {name} url");
++            }
++            Ok(path.to_owned())
++        };
++
++        let (host, path) = match scheme {
++            "http" | "https" => match netloc {
++                "codeberg.org" => (Host::Forge(Forge::Codeberg), owned("codeberg")?),
++                "github.com" | "www.github.com" => {
++                    owned("github")?;
++                    (Host::Forge(Forge::Github), segments[..2].join("/"))
++                }
++                "gitlab.com" | "www.gitlab.com" => (Host::Forge(Forge::Gitlab), owned("gitlab")?),
++                "aur.archlinux.org" => {
++                    let path = match segments.as_slice() {
++                        ["packages", name, ..] => name.to_string(),
++                        ["packages"] => bail!("invalid aur url"),
++                        _ => path.to_owned(),
++                    };
++                    (Host::Forge(Forge::Aur), path)
++                }
++                "git.nullsum.net" => (Host::Forge(Forge::Nullsum), owned("git.nullsum.net")?),
++                "invent.kde.org" => (Host::Forge(Forge::KdeInvent), owned("invent.kde.org")?),
++                netloc => (Host::named(netloc), owned(netloc)?),
++            },
++            "" => bail!("missing git host"),
++            scheme => (Host::named(scheme), path.to_owned()),
++        };
++        Ok(Source { host, path })
++    }
++}
++
++/// The text before the first `/`, and the text after it.
++fn host_and_path<'i>(input: &mut &'i str) -> winnow::Result<(&'i str, &'i str), EmptyError> {
++    separated_pair(take_till(0.., '/'), '/', rest).parse_next(input)
++}
++
++/// The scheme, netloc and path, each "" when absent; the path is trimmed of `/` and has no
++/// query or fragment.
++fn url<'i>(input: &mut &'i str) -> winnow::Result<(&'i str, &'i str, &'i str), EmptyError> {
++    let scheme = opt(scheme).parse_next(input)?.unwrap_or_default();
++    let netloc = opt(netloc).parse_next(input)?.unwrap_or_default();
++    let path = terminated(take_till(0.., ['?', '#']), rest).parse_next(input)?;
++    Ok((scheme, netloc, path.trim_matches('/')))
++}
++
++/// An ASCII letter, then ASCII alphanumerics or `+ - .`, up to the first `:`.
++fn scheme<'i>(input: &mut &'i str) -> winnow::Result<&'i str, EmptyError> {
++    terminated(
++        (
++            one_of(|c: char| c.is_ascii_alphabetic()),
++            take_while(0.., |c: char| {
++                c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')
++            }),
++        )
++            .take(),
++        ':',
++    )
++    .parse_next(input)
++}
++
++/// `//` and the text up to the first `/`, `?` or `#`.
++fn netloc<'i>(input: &mut &'i str) -> winnow::Result<&'i str, EmptyError> {
++    preceded("//", take_till(0.., ['/', '?', '#'])).parse_next(input)
++}
++

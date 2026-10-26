@@ -1,0 +1,15 @@
+diff --git a/src/repo.rs b/src/repo.rs
+--- a/src/repo.rs
++++ b/src/repo.rs
+@@ -0,0 +93,11 @@
++#[derive(Debug, Clone, Copy)]
++pub struct Filter {
++    pub exclude_archived: bool,
++    pub exclude_forks: bool,
++}
++
++impl Filter {
++    pub fn admits(&self, archived: bool, fork: bool) -> bool {
++        !(self.exclude_archived && archived) && !(self.exclude_forks && fork)
++    }
++}

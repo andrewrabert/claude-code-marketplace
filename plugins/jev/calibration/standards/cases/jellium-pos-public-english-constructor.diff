@@ -1,0 +1,59 @@
+diff --git a/src/platform_abi/src/lang.rs b/src/platform_abi/src/lang.rs
+--- a/src/platform_abi/src/lang.rs
++++ b/src/platform_abi/src/lang.rs
+@@ -0,0 +1,55 @@
++#[derive(Copy, Clone, PartialEq, Eq, Debug)]
++pub enum MenuLabel {
++    Back,
++    Forward,
++    Reload,
++    Undo,
++    Redo,
++    Cut,
++    Copy,
++    Paste,
++    SelectAll,
++}
++
++#[derive(Copy, Clone, PartialEq, Eq, Debug)]
++pub struct Locale {
++    back: &'static str,
++    forward: &'static str,
++    reload: &'static str,
++    undo: &'static str,
++    redo: &'static str,
++    cut: &'static str,
++    copy: &'static str,
++    paste: &'static str,
++    select_all: &'static str,
++}
++
++impl Locale {
++    pub const fn english() -> Locale {
++        Locale {
++            back: "Back",
++            forward: "Forward",
++            reload: "Reload",
++            undo: "Undo",
++            redo: "Redo",
++            cut: "Cut",
++            copy: "Copy",
++            paste: "Paste",
++            select_all: "Select All",
++        }
++    }
++
++    pub fn label(&self, label: MenuLabel) -> &'static str {
++        match label {
++            MenuLabel::Back => self.back,
++            MenuLabel::Forward => self.forward,
++            MenuLabel::Reload => self.reload,
++            MenuLabel::Undo => self.undo,
++            MenuLabel::Redo => self.redo,
++            MenuLabel::Cut => self.cut,
++            MenuLabel::Copy => self.copy,
++            MenuLabel::Paste => self.paste,
++            MenuLabel::SelectAll => self.select_all,
++        }
++    }
++}

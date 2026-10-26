@@ -1,0 +1,42 @@
+diff --git a/src/tools/preview/render.rs b/src/tools/preview/render.rs
+--- a/src/tools/preview/render.rs
++++ b/src/tools/preview/render.rs
+@@ -0,0 +20,38 @@
++const BINARY_BYTE_LIMIT: u64 = 65536;
++const HEX_LINE_BYTES: usize = 16;
++const HEX_GROUP_BYTES: usize = 2;
++const HEX_COLUMN_WIDTH: usize = 39;
++
++/// Dumps the first `BINARY_BYTE_LIMIT` bytes in `xxd`'s default format.
++fn hex_dump(file: &Path) -> Result<Vec<u8>, Failure> {
++    let mut data = Vec::new();
++    File::open(file)
++        .and_then(|source| source.take(BINARY_BYTE_LIMIT).read_to_end(&mut data))
++        .with_context(|| format!("reading {}", file.display()))
++        .map_err(|error| Failure {
++            partial: Vec::new(),
++            error,
++        })?;
++    let mut out = String::new();
++    for (index, line) in data.chunks(HEX_LINE_BYTES).enumerate() {
++        let groups: Vec<String> = line.chunks(HEX_GROUP_BYTES).map(hex::encode).collect();
++        let text: String = line
++            .iter()
++            .map(|&byte| {
++                if byte.is_ascii_graphic() || byte == b' ' {
++                    char::from(byte)
++                } else {
++                    '.'
++                }
++            })
++            .collect();
++        writeln!(
++            out,
++            "{:08x}: {:<HEX_COLUMN_WIDTH$}  {text}",
++            index * HEX_LINE_BYTES,
++            groups.join(" ")
++        )
++        .unwrap();
++    }
++    Ok(out.into_bytes())
++}

@@ -1,0 +1,47 @@
+diff --git a/src/github.rs b/src/github.rs
+--- a/src/github.rs
++++ b/src/github.rs
+@@ -0,0 +118,43 @@
++async fn list_targets(http: &Http, api: &BaseUrl, targets: &[Target]) -> Result<Vec<Repo>, Error> {
++    let mut private: Option<Vec<Repo>> = None;
++    let mut repos = Vec::new();
++    for target in targets {
++        let mut found = match target {
++            Target::Owner(owner) => {
++                let url = paged(api.endpoint(["users", owner.as_str(), "repos"]), &[]);
++                let mut found = http.get_all::<Repo>(url).await?.unwrap_or_else(|| {
++                    warn!("GitHub user not found: {owner}");
++                    Vec::new()
++                });
++                if private.is_none() {
++                    let url = paged(
++                        api.endpoint(["user", "repos"]),
++                        &[("visibility", "private")],
++                    );
++                    private = Some(http.get_all(url).await?.unwrap_or_default());
++                }
++                found.extend(
++                    private
++                        .iter()
++                        .flatten()
++                        .filter(|repo| target.matches(&repo.full_name))
++                        .cloned(),
++                );
++                found
++            }
++            Target::Repo { owner, name } => {
++                let url = api.endpoint(["repos", owner.as_str(), name.as_str()]);
++                match http.get::<Repo>(url).await? {
++                    Some(repo) => vec![repo],
++                    None => {
++                        warn!("GitHub repo not found: {owner}/{name}");
++                        Vec::new()
++                    }
++                }
++            }
++        };
++        found.retain(|repo| target.matches(&repo.full_name));
++        repos.append(&mut found);
++    }
++    Ok(repos)
++}

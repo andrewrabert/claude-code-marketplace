@@ -1,0 +1,16 @@
+diff --git a/crates/core/src/tasks.rs b/crates/core/src/tasks.rs
+--- a/crates/core/src/tasks.rs
++++ b/crates/core/src/tasks.rs
+@@ -0,0 +104,12 @@
++impl FromStr for TaskDue {
++    type Err = NotedError;
++    fn from_str(s: &str) -> Result<TaskDue> {
++        let s = s.trim();
++        if s.is_empty() {
++            return Ok(TaskDue::none());
++        }
++        chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
++            .map(|date| TaskDue(Some(date)))
++            .map_err(|_| rejected(format!("not a due date (YYYY-MM-DD): '{s}'")))
++    }
++}

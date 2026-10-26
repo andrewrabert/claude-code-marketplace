@@ -1,0 +1,27 @@
+diff --git a/src/tools/jdownloader_remote/mod.rs b/src/tools/jdownloader_remote/mod.rs
+--- a/src/tools/jdownloader_remote/mod.rs
++++ b/src/tools/jdownloader_remote/mod.rs
+@@ -0,0 +200,23 @@
++fn add(api: &Api, format: Format, inputs: Vec<String>, out: &mut impl Write) -> Result<()> {
++    let mut containers = Vec::new();
++    let mut urls = Vec::new();
++    for input in inputs {
++        let path = PathBuf::from(&input);
++        if path.is_file() {
++            containers.push(path);
++        } else if Url::parse(&input).is_ok() {
++            urls.push(input);
++        } else {
++            bail!("not a file or URL: {input}");
++        }
++    }
++    let mut stdin = io::stdin().lock();
++    if !stdin.is_terminal() {
++        let mut data = Vec::new();
++        stdin.read_to_end(&mut data).context("reading stdin")?;
++        let text = String::from_utf8_lossy(&data);
++        let schemes = ["ftp", "http", "https"]
++            .map(|scheme| scheme.parse::<Scheme>().expect("valid scheme"));
++        let pattern = UrlPattern::new(&schemes);
++        urls.extend(pattern.urls(&text).map(str::to_owned));
++    }

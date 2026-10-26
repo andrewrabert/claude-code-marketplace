@@ -1,0 +1,27 @@
+diff --git a/crates/core/src/domain/notepath.rs b/crates/core/src/domain/notepath.rs
+--- a/crates/core/src/domain/notepath.rs
++++ b/crates/core/src/domain/notepath.rs
+@@ -0,0 +146,23 @@
++fn stored(at: &NotePath, file: Option<&str>) -> Path {
++    let parts = at
++        .segments()
++        .into_iter()
++        .flat_map(|segment| {
++            let spelled = segment.to_string();
++            match segment {
++                Segment::Task(_) => vec![Task::DIR.to_string(), spelled[Task::PREFIX.len_utf8()..].to_string()],
++                Segment::Log(_) => vec![Log::DIR.to_string(), spelled[Log::PREFIX.len_utf8()..].to_string()],
++                Segment::Note(_) => vec![spelled],
++            }
++        })
++        .chain(file.map(str::to_string))
++        .map(|part| part.parse::<Segment>().expect("a store part is a plain segment"))
++        .collect();
++    Path::from(Segments(parts))
++}
++
++impl From<&DirPath> for Path {
++    fn from(at: &DirPath) -> Path {
++        stored(&at.0, None)
++    }
++}

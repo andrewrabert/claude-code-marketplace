@@ -1,0 +1,8 @@
+{
+  "name": "jev",
+  "description": "Review Rust code and surface specs against my standards with jev: a reviewing edit agent, an audit agent, and a scan tool",
+  "version": "2026.10.26.0",
+  "author": {
+    "name": "Andrew Rabert"
+  }
+}

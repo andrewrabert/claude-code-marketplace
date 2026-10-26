@@ -1,0 +1,31 @@
+diff --git a/src/tools/jdownloader_remote/model.rs b/src/tools/jdownloader_remote/model.rs
+--- a/src/tools/jdownloader_remote/model.rs
++++ b/src/tools/jdownloader_remote/model.rs
+@@ -0,0 +86,27 @@
++#[derive(Clone, Copy, Serialize, ValueEnum)]
++pub enum CleanupAction {
++    #[serde(rename = "DELETE_ALL")]
++    All,
++    #[serde(rename = "DELETE_DISABLED")]
++    Disabled,
++    #[serde(rename = "DELETE_FAILED")]
++    Failed,
++    #[serde(rename = "DELETE_FINISHED")]
++    Finished,
++    #[serde(rename = "DELETE_OFFLINE")]
++    Offline,
++    #[serde(rename = "DELETE_DUPE")]
++    Dupe,
++    #[serde(rename = "DELETE_MODE")]
++    Mode,
++}
++
++#[derive(Clone, Copy, Serialize, ValueEnum)]
++pub enum CleanupMode {
++    #[serde(rename = "REMOVE_LINKS_AND_DELETE_FILES")]
++    DeleteFiles,
++    #[serde(rename = "REMOVE_LINKS_AND_RECYCLE_FILES")]
++    RecycleFiles,
++    #[serde(rename = "REMOVE_LINKS_ONLY")]
++    LinksOnly,
++}

@@ -1,0 +1,17 @@
+diff --git a/src/server.rs b/src/server.rs
+--- a/src/server.rs
++++ b/src/server.rs
+@@ -0,0 +1,13 @@
++pub struct Server {
++    pub host: String,
++    pub port: u16,
++}
++
++impl Server {
++    pub fn new(host: String, port: u16) -> Server {
++        let server = Server { host, port };
++        assert!(server.port != 0, "port must be nonzero");
++        assert!(!server.host.is_empty(), "host must be set");
++        server
++    }
++}

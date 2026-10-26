@@ -1,0 +1,21 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -0,0 +120,17 @@
++fn shell_overlay() -> anyhow::Result<Config> {
++    let Some(spec) = std::env::var_os(MOUNT_ENV) else {
++        return Ok(Config::default());
++    };
++    let spec = spec
++        .into_string()
++        .map_err(|_| anyhow::anyhow!("{MOUNT_ENV}: value is not valid UTF-8"))?
++        .parse::<MountSpec>()
++        .map_err(|error| anyhow::anyhow!("{MOUNT_ENV}: {error}"))?;
++    Ok(Config {
++        paths: Some(PathsConfig {
++            mounts: Some(vec![spec.into_config()]),
++            ..PathsConfig::default()
++        }),
++        ..Config::default()
++    })
++}

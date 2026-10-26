@@ -1,0 +1,37 @@
+diff --git a/crates/core/src/tasks.rs b/crates/core/src/tasks.rs
+--- a/crates/core/src/tasks.rs
++++ b/crates/core/src/tasks.rs
+@@ -0,0 +92,33 @@
++// a task's due date, or none; spelled null on the wire
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
++#[serde(try_from = "Option<String>", into = "Option<String>")]
++#[schemars(with = "Option<String>")]
++pub struct TaskDue(Option<chrono::NaiveDate>);
++
++impl TaskDue {
++    pub fn is_set(&self) -> bool {
++        self.0.is_some()
++    }
++}
++
++impl FromStr for TaskDue {
++    type Err = NotedError;
++    fn from_str(s: &str) -> Result<TaskDue> {
++        chrono::NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
++            .map(|date| TaskDue(Some(date)))
++            .map_err(|_| rejected(format!("not a due date (YYYY-MM-DD): '{s}'")))
++    }
++}
++
++impl TryFrom<Option<String>> for TaskDue {
++    type Error = NotedError;
++    fn try_from(s: Option<String>) -> Result<TaskDue> {
++        s.map_or(Ok(TaskDue(None)), |s| s.parse())
++    }
++}
++
++impl From<TaskDue> for Option<String> {
++    fn from(due: TaskDue) -> Option<String> {
++        due.0.map(|date| date.to_string())
++    }
++}

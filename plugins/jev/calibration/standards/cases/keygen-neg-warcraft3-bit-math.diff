@@ -1,0 +1,35 @@
+diff --git a/keygen-rs/crates/keygen/src/warcraft3.rs b/keygen-rs/crates/keygen/src/warcraft3.rs
+--- a/keygen-rs/crates/keygen/src/warcraft3.rs
++++ b/keygen-rs/crates/keygen/src/warcraft3.rs
+@@ -0,0 +52,31 @@
++/// Fold the base-5 digits into a 128-bit value stored as four most-significant-first words.
++fn pack(digits: &[u8; 52]) -> [u32; 4] {
++    let mut value = [0u32; 4];
++    for &digit in digits.iter().rev() {
++        let mut carry = digit as u32;
++        for word in value.iter_mut().rev() {
++            let product = *word as u64 * 5;
++            *word = (product as u32).wrapping_add(carry);
++            // The binary derives the carry from the old word alone, ignoring the added digit.
++            carry = (product >> 32) as u32;
++        }
++    }
++    value
++}
++
++fn nibble(value: &[u32; 4], index: usize) -> u8 {
++    ((value[3 - (index >> 3)] >> ((index & 7) * 4)) & 0xF) as u8
++}
++
++/// Permute the low 120 bits: output bit `i` takes input bit `11 * i mod 120`.
++fn permute(value: &[u32; 4]) -> [u32; 4] {
++    let mut output = *value;
++    let mut source = 0;
++    for target in 0..120 {
++        let bit = (value[3 - (source >> 5)] >> (source & 31)) & 1;
++        let word = &mut output[3 - (target >> 5)];
++        *word = (*word & !(1 << (target & 31))) | (bit << (target & 31));
++        source = (source + 11) % 120;
++    }
++    output
++}

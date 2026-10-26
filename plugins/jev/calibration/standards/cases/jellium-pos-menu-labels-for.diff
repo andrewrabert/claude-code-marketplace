@@ -1,0 +1,37 @@
+diff --git a/src/lang/src/lib.rs b/src/lang/src/lib.rs
+--- a/src/lang/src/lib.rs
++++ b/src/lang/src/lib.rs
+@@ -0,0 +51,33 @@
++pub const FALLBACK_LANGUAGE: &str = "en-us";
++
++/// Resolved per language, falling back to [`FALLBACK_LANGUAGE`].
++pub const MENU_LANGUAGES: &[MenuLabels] = &[MenuLabels {
++    lang: "en-us",
++    back: "Back",
++    forward: "Forward",
++    reload: "Reload",
++    undo: "Undo",
++    redo: "Redo",
++    cut: "Cut",
++    copy: "Copy",
++    paste: "Paste",
++    delete: "Delete",
++    select_all: "Select All",
++}];
++
++/// Exact tag, then the primary subtag, then [`FALLBACK_LANGUAGE`]; the last is
++/// the only entry the table is guaranteed to hold, so a miss on it yields the
++/// first entry rather than none.
++pub fn menu_labels_for(locale: &str) -> &'static MenuLabels {
++    let find = |lang: &str| MENU_LANGUAGES.iter().find(|e| e.lang == lang);
++    find(locale)
++        .or_else(|| find(locale.split('-').next().unwrap_or(locale)))
++        .or_else(|| find(FALLBACK_LANGUAGE))
++        .unwrap_or(&MENU_LANGUAGES[0])
++}
++
++/// The menu labels, resolved once from the system locale.
++pub fn menu_labels() -> &'static MenuLabels {
++    static LABELS: std::sync::OnceLock<&'static MenuLabels> = std::sync::OnceLock::new();
++    LABELS.get_or_init(|| menu_labels_for(&system_locale()))
++}

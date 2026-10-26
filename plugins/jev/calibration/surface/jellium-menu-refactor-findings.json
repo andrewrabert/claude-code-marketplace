@@ -1,0 +1,376 @@
+[
+  {
+    "id": 1,
+    "file": "src/jfn_cef/src/app.rs",
+    "spec_lines": [
+      11,
+      16
+    ],
+    "declaration": "struct PopupOptions {\n    options: Vec<String>,\n    selected: Option<usize>,\n    selectable: Vec<i32>,\n    anchor: Option<(i32, i32)>,\n}",
+    "question": "raw-mechanism-type",
+    "probability": 0.87,
+    "asks": "A field, parameter or return type in the declaration uses a raw mechanism type where a type for the domain concept belongs.",
+    "violation": "The declaration carries a domain concept as a primitive or generic container: an integer id, index or flag, a String key or name, a bool mode, a tuple, an Option or Vec of raw values, or a map, where a named struct, newtype or enum for that concept would carry its meaning and its invariants.",
+    "label": "yes",
+    "label_source": "session",
+    "evidence": "51c28f3c: \"why are you adding PopupOptions? it's contents are a propgation of incorrect tpyings (signed integers make no sense for any ofhose), unclear correlation (selecatble as a vec of integers tells me nothing about what those correspond to in terms of owernship)\"; 342912a9: \"anchor isnt a fucking signed integer. selectable isnt a fucking number - that makes zero sense. hard reject\"",
+    "note": "Struct exists on main; the branch only changed selected from i32 to Option<usize> (138a30a). The user kept it out of scope (\"iif popupoptions isn't new. why the fucking shit is it in spec\") but rejected its selectable and anchor typing."
+  },
+  {
+    "id": 2,
+    "file": "src/jfn_cef/src/business_web.rs",
+    "spec_lines": [
+      23,
+      23
+    ],
+    "declaration": "fn handle_message(app: &jfn_platform_abi::App, message: BrowserMessage) -> bool;",
+    "question": "failure-outside-result",
+    "probability": 0.79,
+    "asks": "The declaration's signature reports a failure through something other than Result.",
+    "violation": "A function that can fail returns bool, Option, a sentinel number, an empty collection or a status value to say that it failed, or returns nothing where a failure has to reach the caller.",
+    "label": "yes",
+    "label_source": "session",
+    "evidence": "342912a9: \"on_dropdown must not be a bool. needs to be Ok or Err\"; 51c28f3c: \"hard reject on bool. ... i will generally reject bools as being for a check\"",
+    "note": "Moved from main with an added app parameter (593a914). The bool-for-handled/failed return is unchanged from main and was committed in a4e72a8f without comment; that conflicts with the user's rejection of the same pattern in on_dropdown."
+  },
+  {
+    "id": 3,
+    "file": "src/jfn_cef/src/client/popup.rs",
+    "spec_lines": [
+      29,
+      35
+    ],
+    "declaration": "    pub(crate) fn set_popup_options(\n        self: &Arc<Self>,\n        opts: Vec<String>,\n        selected: Option<usize>,\n        selectable: Vec<i32>,\n        anchor: Option<(i32, i32)>,\n    );",
+    "question": "raw-mechanism-type",
+    "probability": 0.89,
+    "asks": "A field, parameter or return type in the declaration uses a raw mechanism type where a type for the domain concept belongs.",
+    "violation": "The declaration carries a domain concept as a primitive or generic container: an integer id, index or flag, a String key or name, a bool mode, a tuple, an Option or Vec of raw values, or a map, where a named struct, newtype or enum for that concept would carry its meaning and its invariants.",
+    "label": "yes",
+    "label_source": "session",
+    "evidence": "342912a9: \"set popup options is nonsensical intermediate propagation. ... options as a whole is nonsense intermediate propagation of a ambiguous unconstructed something\"; 342912a9: \"anchor isnt a fucking signed integer. selectable isnt a fucking number - that makes zero sense. hard reject\"",
+    "note": "Exists on main; the branch only changed selected from i32 to Option<usize>. selectable: Vec<i32> and anchor: Option<(i32, i32)> are the exact parameters the user rejected."
+  },
+  {
+    "id": 4,
+    "file": "src/jfn_cef/src/client.rs",
+    "spec_lines": [
+      85,
+      98
+    ],
+    "declaration": "#[derive(Default)]\nstruct PopupState {\n    x: i32,\n    y: i32,\n    w: i32,\n    h: i32,\n    visible: bool,\n    options: Vec<String>,\n    selected_idx: Option<usize>,\n    selectable: Vec<i32>,\n    anchor: Option<(i32, i32)>,\n    size_received: bool,\n    options_received: bool,\n}",
+    "question": "raw-mechanism-type",
+    "probability": 0.85,
+    "asks": "A field, parameter or return type in the declaration uses a raw mechanism type where a type for the domain concept belongs.",
+    "violation": "The declaration carries a domain concept as a primitive or generic container: an integer id, index or flag, a String key or name, a bool mode, a tuple, an Option or Vec of raw values, or a map, where a named struct, newtype or enum for that concept would carry its meaning and its invariants.",
+    "label": "yes",
+    "label_source": "session",
+    "evidence": "342912a9: \"anchor isnt a fucking signed integer. selectable isnt a fucking number - that makes zero sense. hard reject\"; 51c28f3c: \"selecatble as a vec of integers tells me nothing about what those correspond to in terms of owernship\"",
+    "note": "Exists on main; the branch only changed selected_idx from i32 to Option<usize>. It carries the same selectable and anchor fields, and the user rejected that typing."
+  },
+  {
+    "id": 5,
+    "file": "src/jfn_rust/src/app.rs",
+    "spec_lines": [
+      188,
+      194
+    ],
+    "declaration": "fn run_app(\n    instance: &Instance,\n    opts: StartupOptions,\n    runtime: BrowserCef,\n    metadata: ApplicationMetadata,\n    locale: jfn_platform_abi::lang::LanguageLoader,\n) -> c_int;",
+    "question": "failure-outside-result",
+    "probability": 0.86,
+    "asks": "The declaration's signature reports a failure through something other than Result.",
+    "violation": "A function that can fail returns bool, Option, a sentinel number, an empty collection or a status value to say that it failed, or returns nothing where a failure has to reach the caller.",
+    "label": "yes",
+    "label_source": "session",
+    "evidence": "9138ed29: \"delete that line that returns 1. 1 is a number, not a situation\"; 2db44f87: \"that should be an error if it cant\" / \"just Result Err or whaatever\"",
+    "note": "Exists on main and the branch only added the locale parameter. It returns c_int 1 on failure. The user's quotes are about c_int sentinels elsewhere (run_context_menu, open_context_menu), not about this function."
+  },
+  {
+    "id": 6,
+    "file": "src/jfn_rust/src/app.rs",
+    "spec_lines": [
+      196,
+      203
+    ],
+    "declaration": "fn run_with_cef(\n    boot: ReadyBoot,\n    deferred: Option<BrowserCef>,\n    mut resources: StartupResources<InitializedNative>,\n    opts: &StartupOptions,\n    instance: &Instance,\n    app: Arc<App>,\n) -> c_int;",
+    "question": "failure-outside-result",
+    "probability": 0.88,
+    "asks": "The declaration's signature reports a failure through something other than Result.",
+    "violation": "A function that can fail returns bool, Option, a sentinel number, an empty collection or a status value to say that it failed, or returns nothing where a failure has to reach the caller.",
+    "label": "yes",
+    "label_source": "session",
+    "evidence": "9138ed29: \"delete that line that returns 1. 1 is a number, not a situation\"; 2db44f87: \"that should be an error if it cant\"",
+    "note": "Exists on main and the branch only added the app parameter. It returns c_int 1 on failure. The evidence is the same-pattern evidence as id 5."
+  },
+  {
+    "id": 7,
+    "file": "src/jfn_rust/src/shell/settings.rs",
+    "spec_lines": [
+      446,
+      446
+    ],
+    "declaration": "fn audio_channel_label(locale: &LanguageLoader, value: &str) -> String;",
+    "question": "raw-mechanism-type",
+    "probability": 0.78,
+    "asks": "A field, parameter or return type in the declaration uses a raw mechanism type where a type for the domain concept belongs.",
+    "violation": "The declaration carries a domain concept as a primitive or generic container: an integer id, index or flag, a String key or name, a bool mode, a tuple, an Option or Vec of raw values, or a map, where a named struct, newtype or enum for that concept would carry its meaning and its invariants.",
+    "label": "yes",
+    "label_source": "standards",
+    "evidence": "rust-design.md: \"No primitive obsession. `String`, `PathBuf`, `u64` say how a value is stored. Newtypes say what it is.\"",
+    "note": "Exists on main and the branch only added the locale parameter (6bb6390). value: &str is matched against \"stereo\"/\"5.1\"/\"7.1\", a stringly channel layout. No session discusses it."
+  },
+  {
+    "id": 8,
+    "file": "src/jfn_rust/src/shell/settings.rs",
+    "spec_lines": [
+      448,
+      448
+    ],
+    "declaration": "fn log_level_label(locale: &LanguageLoader, value: &str) -> String;",
+    "question": "raw-mechanism-type",
+    "probability": 0.76,
+    "asks": "A field, parameter or return type in the declaration uses a raw mechanism type where a type for the domain concept belongs.",
+    "violation": "The declaration carries a domain concept as a primitive or generic container: an integer id, index or flag, a String key or name, a bool mode, a tuple, an Option or Vec of raw values, or a map, where a named struct, newtype or enum for that concept would carry its meaning and its invariants.",
+    "label": "yes",
+    "label_source": "standards",
+    "evidence": "rust-design.md: \"No primitive obsession. `String`, `PathBuf`, `u64` say how a value is stored. Newtypes say what it is.\"",
+    "note": "Exists on main and the branch only added the locale parameter (6bb6390). value: &str is matched against \"verbose\"/\"debug\"/..., a stringly log level. No session discusses it."
+  },
+  {
+    "id": 9,
+    "file": "src/linux_util/src/menu/engine.rs",
+    "spec_lines": [
+      505,
+      505
+    ],
+    "declaration": "fn request(items: Vec<Item>) -> (MenuRequest, Receiver<c_int>);",
+    "question": "name-misses-concept",
+    "probability": 0.8,
+    "asks": "A name in the declaration is a generic or invented term where the description or the spec names the domain concept.",
+    "violation": "A type, function, field, parameter or variant is named with a vague word such as data, info, item, entry, record, kind, helper, handler or manager, or with a term the description never uses, where the description or another declaration names the concept it holds.",
+    "label": "no",
+    "label_source": "session",
+    "evidence": "2db44f87: \"i said nothing about a fucking Id. it's not an Id. it's an Item.\" / \"an Item is always just the spec Item\"",
+    "note": "Test helper in engine.rs mod tests. It exists on main, and the branch only changed MenuItem to Item. The user dictated the name Item and told the agent to remove all tests from the spec (342912a9)."
+  },
+  {
+    "id": 10,
+    "file": "src/linux_util/src/menu/interaction_fsm.rs",
+    "spec_lines": [
+      525,
+      525
+    ],
+    "declaration": "fn selectable(groups: &[Vec<Item>], active: i32) -> Option<usize>;",
+    "question": "raw-mechanism-type",
+    "probability": 0.78,
+    "asks": "A field, parameter or return type in the declaration uses a raw mechanism type where a type for the domain concept belongs.",
+    "violation": "The declaration carries a domain concept as a primitive or generic container: an integer id, index or flag, a String key or name, a bool mode, a tuple, an Option or Vec of raw values, or a map, where a named struct, newtype or enum for that concept would carry its meaning and its invariants.",
+    "label": "yes",
+    "label_source": "session",
+    "evidence": "3e72f38e: \"-1 isn't a value selection data type i want to propagate because we have Option<usize>\"; 51c28f3c: \"in interacttion_fsm, what is active? whyh is it i32?\"",
+    "note": "Exists on main and was changed on the branch (Vec<MenuItem>->groups, return i32->Option<usize>). CONFLICT: after learning active: i32 should be Option<usize>, the user said \"gotcha - i think this good enough\" (51c28f3c), which reads as deferring the fix, not approving it."
+  },
+  {
+    "id": 11,
+    "file": "src/macos/src/init.rs",
+    "spec_lines": [
+      581,
+      584
+    ],
+    "declaration": "unsafe fn install_main_menu(\n    state: &mut InitState,\n    app: std::sync::Arc<jfn_platform_abi::App>,\n);",
+    "question": "failure-outside-result",
+    "probability": 0.75,
+    "asks": "The declaration's signature reports a failure through something other than Result.",
+    "violation": "A function that can fail returns bool, Option, a sentinel number, an empty collection or a status value to say that it failed, or returns nothing where a failure has to reach the caller.",
+    "label": "no",
+    "label_source": "session",
+    "evidence": "a4e72a8f: \"agreed. investigate then direct edit agent\" then \"strip all comments appearias + in diff. then commit\"",
+    "note": "New on the branch (593a914): the menu-bar build moved out of macos_early_init into this function. The user agreed to the design and committed it. The body has no failure path."
+  },
+  {
+    "id": 12,
+    "file": "src/macos/src/ns_menu.rs",
+    "spec_lines": [
+      589,
+      594
+    ],
+    "declaration": "pub(crate) struct MenuEntry {\n    pub title: String,\n    pub tag: c_int,\n    pub enabled: bool,\n    pub checked: bool,\n}",
+    "question": "raw-mechanism-type",
+    "probability": 0.82,
+    "asks": "A field, parameter or return type in the declaration uses a raw mechanism type where a type for the domain concept belongs.",
+    "violation": "The declaration carries a domain concept as a primitive or generic container: an integer id, index or flag, a String key or name, a bool mode, a tuple, an Option or Vec of raw values, or a map, where a named struct, newtype or enum for that concept would carry its meaning and its invariants.",
+    "label": "yes",
+    "label_source": "session",
+    "evidence": "2db44f87: \"i know cef does index stuff with c_int, but nothing outside of cef is allowed to have that C++ ism anywhere. an Item type is neeeded\" / \"nothing should be indexing into that vec though\"",
+    "note": "`tag: c_int` is a row index (macos/menu.rs sets `tag = row`), the exact c_int-index pattern the user rejected; conflicting minor signal: 2d14a4d4 \"enabled bool is fine.\" covers the `enabled` field only. Struct exists on main; branch only removed `separator`."
+  },
+  {
+    "id": 13,
+    "file": "src/platform_abi/src/context_menu.rs",
+    "spec_lines": [
+      700,
+      700
+    ],
+    "declaration": "    pub fn serial(&self) -> MenuSerial;",
+    "question": "needless-layer",
+    "probability": 0.75,
+    "asks": "The declaration only forwards to, wraps or repeats another declaration in the spec.",
+    "violation": "The declaration is a function, method, struct or trait whose signature restates another declaration in the spec, wraps one type in another without adding meaning, or adds a step that callers could skip by using the other declaration directly.",
+    "label": "no",
+    "label_source": "session",
+    "evidence": "b5d89946: user: \"i'd rather have a second ContextMenuBuilder that holds a private MenuBuilder\"; assistant proposal listed \"`serial()` passes through\" and \"`add_on_closed` passes through\"; user: \"make the edits\" (committed in 6bb6390). Also 51c28f3c: \"serial would be read only on a builder, ya?\"",
+    "note": "User dictated the private-MenuBuilder wrapper and approved the pass-through `serial()` explicitly; callers cannot skip it because `menu` is private. New on this branch."
+  },
+  {
+    "id": 14,
+    "file": "src/platform_abi/src/lib.rs",
+    "spec_lines": [
+      844,
+      848
+    ],
+    "declaration": "    fn set_surface_visibility(\n        &self,\n        s: SurfaceHandle,\n        visibility: Visibility,\n    ) -> VisibilityCommit;",
+    "question": "failure-outside-result",
+    "probability": 0.76,
+    "asks": "The declaration's signature reports a failure through something other than Result.",
+    "violation": "A function that can fail returns bool, Option, a sentinel number, an empty collection or a status value to say that it failed, or returns nothing where a failure has to reach the caller.",
+    "label": "unknown",
+    "label_source": "none",
+    "evidence": "",
+    "note": "No session evidence and no standard decides whether issuing a visibility commit can fail; `VisibilityCommit` is an ack handle, not a status. Unchanged from main (introduced e038a7e)."
+  },
+  {
+    "id": 15,
+    "file": "src/platform_abi/src/lib.rs",
+    "spec_lines": [
+      852,
+      852
+    ],
+    "declaration": "    fn mpv_host(&self) -> &dyn MpvHost;",
+    "question": "not-in-description",
+    "probability": 0.78,
+    "asks": "The described change does not need the declaration under review.",
+    "violation": "The declaration serves a goal the description does not state, and no other declaration in the spec uses it, so the change would be complete without it.",
+    "label": "no",
+    "label_source": "standards",
+    "evidence": "rust-design.md: \"The diff is the deliverable. Every added line traces to the request.\" -- this line is not added by main..menu-refactor, so the bullet implies no violation.",
+    "note": "unchanged from main: the branch's only edit to `trait Platform` is the `init` signature (adds `app: Arc<App>`); this method predates the branch (git log -S: introduced 542a7f5), so the spec lists it only because the whole changed trait is listed."
+  },
+  {
+    "id": 16,
+    "file": "src/platform_abi/src/lib.rs",
+    "spec_lines": [
+      854,
+      854
+    ],
+    "declaration": "    fn media_session(&self) -> &dyn MediaSink;",
+    "question": "not-in-description",
+    "probability": 0.84,
+    "asks": "The described change does not need the declaration under review.",
+    "violation": "The declaration serves a goal the description does not state, and no other declaration in the spec uses it, so the change would be complete without it.",
+    "label": "no",
+    "label_source": "standards",
+    "evidence": "rust-design.md: \"The diff is the deliverable. Every added line traces to the request.\" -- this line is not added by main..menu-refactor, so the bullet implies no violation.",
+    "note": "unchanged from main: the branch's only edit to `trait Platform` is the `init` signature (adds `app: Arc<App>`); this method predates the branch (git log -S: introduced 542a7f5), so the spec lists it only because the whole changed trait is listed."
+  },
+  {
+    "id": 17,
+    "file": "src/platform_abi/src/lib.rs",
+    "spec_lines": [
+      869,
+      869
+    ],
+    "declaration": "    fn set_idle_inhibit(&self, level: IdleInhibitLevel);",
+    "question": "not-in-description",
+    "probability": 0.75,
+    "asks": "The described change does not need the declaration under review.",
+    "violation": "The declaration serves a goal the description does not state, and no other declaration in the spec uses it, so the change would be complete without it.",
+    "label": "no",
+    "label_source": "standards",
+    "evidence": "rust-design.md: \"The diff is the deliverable. Every added line traces to the request.\" -- this line is not added by main..menu-refactor, so the bullet implies no violation.",
+    "note": "unchanged from main: the branch's only edit to `trait Platform` is the `init` signature (adds `app: Arc<App>`); this method predates the branch (git log -S: introduced e779053/1afce2d), so the spec lists it only because the whole changed trait is listed."
+  },
+  {
+    "id": 18,
+    "file": "src/platform_abi/src/lib.rs",
+    "spec_lines": [
+      870,
+      870
+    ],
+    "declaration": "    fn set_theme_color(&self, rgb: u32);",
+    "question": "raw-mechanism-type",
+    "probability": 0.84,
+    "asks": "A field, parameter or return type in the declaration uses a raw mechanism type where a type for the domain concept belongs.",
+    "violation": "The declaration carries a domain concept as a primitive or generic container: an integer id, index or flag, a String key or name, a bool mode, a tuple, an Option or Vec of raw values, or a map, where a named struct, newtype or enum for that concept would carry its meaning and its invariants.",
+    "label": "yes",
+    "label_source": "session",
+    "evidence": "3d33aa93: \"separate x and y as c_int is meh. isnt there a size type or size + dpi somewhere?\"; 342912a9: \"serial isnt a ffucking u64\"; standard: \"No primitive obsession. `String`, `PathBuf`, `u64` say how a value is stored. Newtypes say what it is.\"",
+    "note": "Same pattern (bare integer carrying a domain value) rejected by the user elsewhere; no message about `set_theme_color` itself. Unchanged from main."
+  },
+  {
+    "id": 19,
+    "file": "src/platform_abi/src/lib.rs",
+    "spec_lines": [
+      876,
+      876
+    ],
+    "declaration": "    fn clipboard_read_text_async(&self, on_done: OnText);",
+    "question": "failure-outside-result",
+    "probability": 0.77,
+    "asks": "The declaration's signature reports a failure through something other than Result.",
+    "violation": "A function that can fail returns bool, Option, a sentinel number, an empty collection or a status value to say that it failed, or returns nothing where a failure has to reach the caller.",
+    "label": "yes",
+    "label_source": "standards",
+    "evidence": "rust-design.md: \"`Option<T>` means absence, nothing else.\" + standards.md: \"Errors must propagate using a language's idiomatic error mechanism.\"",
+    "note": "Trait doc says \"`None` when it holds no text, or the read failed\", so the callback's Option conflates absence and failure. Unchanged from main."
+  },
+  {
+    "id": 20,
+    "file": "src/platform_abi/src/lib.rs",
+    "spec_lines": [
+      878,
+      878
+    ],
+    "declaration": "    fn primary_selection(&self) -> Option<&dyn PrimarySelection>;",
+    "question": "not-in-description",
+    "probability": 0.78,
+    "asks": "The described change does not need the declaration under review.",
+    "violation": "The declaration serves a goal the description does not state, and no other declaration in the spec uses it, so the change would be complete without it.",
+    "label": "no",
+    "label_source": "standards",
+    "evidence": "rust-design.md: \"The diff is the deliverable. Every added line traces to the request.\" -- this line is not added by main..menu-refactor, so the bullet implies no violation.",
+    "note": "unchanged from main: the branch's only edit to `trait Platform` is the `init` signature (adds `app: Arc<App>`); this method predates the branch (git log -S: introduced 738e524), so the spec lists it only because the whole changed trait is listed."
+  },
+  {
+    "id": 21,
+    "file": "src/platform_abi/src/lib.rs",
+    "spec_lines": [
+      880,
+      880
+    ],
+    "declaration": "    fn open_external_url(&self, url: &str);",
+    "question": "failure-outside-result",
+    "probability": 0.79,
+    "asks": "The declaration's signature reports a failure through something other than Result.",
+    "violation": "A function that can fail returns bool, Option, a sentinel number, an empty collection or a status value to say that it failed, or returns nothing where a failure has to reach the caller.",
+    "label": "yes",
+    "label_source": "standards",
+    "evidence": "standards.md: \"Errors must propagate idiomatically to the upper-most edge that should know of a failure.\"",
+    "note": "Returns `()`; linux `open_url::open` handles the spawn error internally, so the caller never learns of it. Unchanged from main."
+  },
+  {
+    "id": 22,
+    "file": "src/platform_abi/src/lib.rs",
+    "spec_lines": [
+      881,
+      881
+    ],
+    "declaration": "    fn open_path(&self, path: &Path);",
+    "question": "failure-outside-result",
+    "probability": 0.86,
+    "asks": "The declaration's signature reports a failure through something other than Result.",
+    "violation": "A function that can fail returns bool, Option, a sentinel number, an empty collection or a status value to say that it failed, or returns nothing where a failure has to reach the caller.",
+    "label": "yes",
+    "label_source": "standards",
+    "evidence": "standards.md: \"Errors must propagate using a language's idiomatic error mechanism.\"",
+    "note": "Returns `()`; macOS/Windows impls do `let _ = Command::new(..).spawn();`, discarding the error. Unchanged from main."
+  }
+]

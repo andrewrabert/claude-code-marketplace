@@ -1,0 +1,8 @@
+diff --git a/crates/core/src/domain/notepath.rs b/crates/core/src/domain/notepath.rs
+--- a/crates/core/src/domain/notepath.rs
++++ b/crates/core/src/domain/notepath.rs
+@@ -0,0 +29,4 @@
++    // the scope itself: no segments
++    pub(crate) fn is_root(&self) -> bool {
++        self.segments().0.is_empty()
++    }

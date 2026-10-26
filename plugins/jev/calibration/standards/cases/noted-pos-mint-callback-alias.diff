@@ -1,0 +1,5 @@
+diff --git a/crates/core/src/fs/platform.rs b/crates/core/src/fs/platform.rs
+--- a/crates/core/src/fs/platform.rs
++++ b/crates/core/src/fs/platform.rs
+@@ -0,0 +1,1 @@
++pub(crate) type Mint<T> = dyn Fn(&str) -> Option<T> + Send + Sync;

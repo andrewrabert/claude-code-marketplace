@@ -1,0 +1,50 @@
+diff --git a/src/cue.rs b/src/cue.rs
+--- a/src/cue.rs
++++ b/src/cue.rs
+@@ -0,0 +1,46 @@
++//! Cue sheet parsing.
++
++use anyhow::{Result, bail};
++
++/// A `FILE` entry and the tracks inside it.
++pub struct File {
++    /// The file name as written in the sheet, without quotes.
++    pub name: String,
++    pub tracks: Vec<Track>,
++}
++
++/// A `TRACK` entry.
++pub struct Track {
++    /// The track's data type, such as `AUDIO` or `MODE1/2352`.
++    pub data_type: String,
++}
++
++/// The `FILE` entries in a cue sheet, in order. `TRACK` lines before any
++/// `FILE` and every other command are ignored.
++pub fn parse(sheet: &str) -> Result<Vec<File>> {
++    let mut files: Vec<File> = Vec::new();
++    for line in sheet.lines().map(str::trim) {
++        if let Some(rest) = line.strip_prefix("FILE ") {
++            let name = rest
++                .trim_start()
++                .rsplit_once(char::is_whitespace)
++                .map_or(rest, |(name, _file_type)| name)
++                .trim();
++            let name = name.strip_prefix('"').unwrap_or(name);
++            let name = name.strip_suffix('"').unwrap_or(name);
++            files.push(File {
++                name: name.to_owned(),
++                tracks: Vec::new(),
++            });
++        } else if let (Some(file), true) = (files.last_mut(), line.starts_with("TRACK ")) {
++            let fields: Vec<&str> = line.split_whitespace().collect();
++            let &[_, _, data_type] = fields.as_slice() else {
++                bail!("unexpected cue sheet line: {line}");
++            };
++            file.tracks.push(Track {
++                data_type: data_type.to_owned(),
++            });
++        }
++    }
++    Ok(files)
++}

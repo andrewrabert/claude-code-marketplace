@@ -1,0 +1,53 @@
+diff --git a/crates/core/src/tasks.rs b/crates/core/src/tasks.rs
+--- a/crates/core/src/tasks.rs
++++ b/crates/core/src/tasks.rs
+@@ -0,0 +15,49 @@
++#[derive(
++    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, ValueEnum,
++)]
++#[serde(rename_all = "lowercase")]
++pub enum TaskState {
++    #[default]
++    Created,
++    Started,
++    Blocked,
++    Completed,
++    Rejected,
++    Invalid,
++}
++
++impl TaskState {
++    pub fn as_str(self) -> &'static str {
++        match self {
++            TaskState::Created => "created",
++            TaskState::Started => "started",
++            TaskState::Blocked => "blocked",
++            TaskState::Completed => "completed",
++            TaskState::Rejected => "rejected",
++            TaskState::Invalid => "invalid",
++        }
++    }
++}
++
++impl std::fmt::Display for TaskState {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        f.write_str(self.as_str())
++    }
++}
++
++impl FromStr for TaskState {
++    type Err = NotedError;
++    fn from_str(s: &str) -> Result<TaskState> {
++        match s {
++            "created" => Ok(TaskState::Created),
++            "started" => Ok(TaskState::Started),
++            "blocked" => Ok(TaskState::Blocked),
++            "completed" => Ok(TaskState::Completed),
++            "rejected" => Ok(TaskState::Rejected),
++            "invalid" => Ok(TaskState::Invalid),
++            _ => Err(rejected(format!(
++                "unknown state '{s}' (created, started, blocked, completed, rejected, invalid)"
++            ))),
++        }
++    }
++}

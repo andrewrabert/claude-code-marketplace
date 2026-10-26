@@ -1,0 +1,1253 @@
+{
+  "session-source-url": {
+    "expect": [],
+    "allow": [
+      "abstraction",
+      "comment"
+    ]
+  },
+  "session-ud-unescape": {
+    "expect": [],
+    "allow": [
+      "comment"
+    ]
+  },
+  "session-hexd-parsers": {
+    "expect": [],
+    "allow": [
+      "abstraction",
+      "comment"
+    ]
+  },
+  "session-udisksctl-line": {
+    "expect": [],
+    "allow": [
+      "comment"
+    ]
+  },
+  "session-source-tests": {
+    "expect": [],
+    "allow": []
+  },
+  "session-split-scheme": {
+    "expect": [],
+    "allow": [
+      "silent",
+      "nonidiomatic",
+      "comment"
+    ]
+  },
+  "pos-silent-defaults": {
+    "expect": [
+      "silent"
+    ],
+    "allow": [
+      "layer_reach",
+      "nonidiomatic",
+      "placeholder",
+      "propagation"
+    ]
+  },
+  "pos-bool-on-failure": {
+    "expect": [
+      "nonidiomatic"
+    ],
+    "allow": [
+      "silent",
+      "propagation"
+    ]
+  },
+  "pos-log-and-continue": {
+    "expect": [
+      "propagation"
+    ],
+    "allow": [
+      "silent",
+      "nonidiomatic"
+    ]
+  },
+  "pos-check-after-construction": {
+    "expect": [
+      "post_construction"
+    ],
+    "allow": [
+      "nonidiomatic",
+      "forgettable"
+    ]
+  },
+  "pos-forgettable-check": {
+    "expect": [
+      "forgettable"
+    ],
+    "allow": [
+      "abstraction",
+      "nonidiomatic",
+      "post_construction"
+    ]
+  },
+  "pos-mechanism-types": {
+    "expect": [
+      "abstraction"
+    ],
+    "allow": [
+      "forgettable"
+    ]
+  },
+  "neg-propagates": {
+    "expect": [],
+    "allow": []
+  },
+  "neg-expected-absence": {
+    "expect": [],
+    "allow": []
+  },
+  "neg-parsed-newtype": {
+    "expect": [],
+    "allow": []
+  },
+  "jellium-pos-strip-accelerator": {
+    "expect": [
+      "transform"
+    ],
+    "allow": [
+      "abstraction"
+    ]
+  },
+  "jellium-pos-system-locale-string": {
+    "expect": [
+      "abstraction",
+      "transform"
+    ],
+    "allow": [
+      "comment",
+      "layer_reach",
+      "nonidiomatic",
+      "silent"
+    ]
+  },
+  "jellium-pos-menu-labels-for": {
+    "expect": [
+      "abstraction",
+      "leaked_default"
+    ],
+    "allow": [
+      "comment",
+      "duplicate_literal",
+      "global",
+      "placeholder",
+      "post_construction",
+      "silent",
+      "table"
+    ]
+  },
+  "jellium-pos-menu-groups-predicate": {
+    "expect": [
+      "classification",
+      "abstraction"
+    ],
+    "allow": [
+      "forgettable",
+      "table",
+      "comment"
+    ]
+  },
+  "jellium-pos-cef-separator-cleanup": {
+    "expect": [
+      "transform"
+    ],
+    "allow": [
+      "silent",
+      "comment"
+    ]
+  },
+  "jellium-pos-const-position-sentinel": {
+    "expect": [
+      "nonidiomatic"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "duplicate_literal",
+      "speculative",
+      "table"
+    ]
+  },
+  "jellium-pos-menu-commands-table": {
+    "expect": [
+      "table"
+    ],
+    "allow": [
+      "abstraction",
+      "comment"
+    ]
+  },
+  "jellium-pos-menucommand-all": {
+    "expect": [
+      "table"
+    ],
+    "allow": [
+      "abstraction",
+      "comment"
+    ]
+  },
+  "jellium-pos-section-titles-index": {
+    "expect": [
+      "table"
+    ],
+    "allow": [
+      "abstraction",
+      "placeholder"
+    ]
+  },
+  "jellium-pos-invented-error-context": {
+    "expect": [
+      "context"
+    ],
+    "allow": [
+      "literal"
+    ]
+  },
+  "jellium-pos-language-env-replace": {
+    "expect": [
+      "transform"
+    ],
+    "allow": [
+      "comment",
+      "abstraction"
+    ]
+  },
+  "jellium-pos-menu-request-select": {
+    "expect": [
+      "forgettable",
+      "abstraction"
+    ],
+    "allow": [
+      "post_construction",
+      "nonidiomatic",
+      "comment"
+    ]
+  },
+  "jellium-pos-public-english-constructor": {
+    "expect": [
+      "leaked_default"
+    ],
+    "allow": [
+      "speculative",
+      "table"
+    ]
+  },
+  "jellium-pos-restating-doc-comment": {
+    "expect": [
+      "comment"
+    ],
+    "allow": []
+  },
+  "jellium-neg-context-menu-builder": {
+    "expect": [],
+    "allow": []
+  },
+  "jellium-neg-cef-menu-label-match": {
+    "expect": [],
+    "allow": []
+  },
+  "jellium-neg-main-detect-locale": {
+    "expect": [],
+    "allow": []
+  },
+  "jellium-neg-language-loader": {
+    "expect": [],
+    "allow": []
+  },
+  "bxwrp-pos-shell-cli-escape": {
+    "expect": [
+      "transform"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "context",
+      "silent"
+    ]
+  },
+  "bxwrp-pos-shell-overlay-main": {
+    "expect": [
+      "needless_layer"
+    ],
+    "allow": [
+      "abstraction",
+      "context",
+      "nonidiomatic"
+    ]
+  },
+  "bxwrp-pos-host-layer": {
+    "expect": [
+      "needless_layer"
+    ],
+    "allow": [
+      "comment"
+    ]
+  },
+  "bxwrp-pos-stdin-is-socket": {
+    "expect": [
+      "classification",
+      "silent"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "context",
+      "forgettable",
+      "nonidiomatic",
+      "option_state",
+      "propagation"
+    ]
+  },
+  "bxwrp-pos-read-stdin-anyhow": {
+    "expect": [
+      "comment",
+      "error_erased"
+    ],
+    "allow": []
+  },
+  "bxwrp-pos-invocation-tuple": {
+    "expect": [
+      "abstraction"
+    ],
+    "allow": [
+      "classification",
+      "context",
+      "forgettable",
+      "option_state",
+      "placeholder",
+      "silent"
+    ]
+  },
+  "bxwrp-pos-exec-script-anyhow": {
+    "expect": [
+      "error_erased"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "context"
+    ]
+  },
+  "home-pos-global-language-loader": {
+    "expect": [
+      "global",
+      "propagation",
+      "silent"
+    ],
+    "allow": [
+      "comment",
+      "layer_reach",
+      "nonidiomatic"
+    ]
+  },
+  "home-pos-locale-static": {
+    "expect": [
+      "global",
+      "needless_layer",
+      "silent"
+    ],
+    "allow": [
+      "comment",
+      "layer_reach",
+      "leaked_default",
+      "nonidiomatic",
+      "placeholder",
+      "propagation"
+    ]
+  },
+  "home-pos-app-new-empty-loader": {
+    "expect": [
+      "silent"
+    ],
+    "allow": [
+      "layer_reach",
+      "nonidiomatic",
+      "placeholder",
+      "propagation"
+    ]
+  },
+  "bxwrp-neg-main-entry-types": {
+    "expect": [],
+    "allow": []
+  },
+  "bxwrp-neg-read-stdin": {
+    "expect": [],
+    "allow": []
+  },
+  "bxwrp-neg-sh-aliases": {
+    "expect": [],
+    "allow": [
+      "abstraction"
+    ]
+  },
+  "home-neg-app-new-result": {
+    "expect": [],
+    "allow": [
+      "silent"
+    ]
+  },
+  "keygen-neg-warcraft3-bit-math": {
+    "expect": [],
+    "allow": [
+      "abstraction",
+      "comment"
+    ]
+  },
+  "noted-pos-log-store-name": {
+    "expect": [
+      "comment",
+      "nonidiomatic",
+      "silent"
+    ],
+    "allow": [
+      "context",
+      "transform"
+    ]
+  },
+  "noted-pos-mcp-unwrap-or-default": {
+    "expect": [
+      "silent"
+    ],
+    "allow": [
+      "nonidiomatic",
+      "propagation"
+    ]
+  },
+  "noted-pos-taskstate-all-const": {
+    "expect": [
+      "table"
+    ],
+    "allow": []
+  },
+  "noted-pos-taskstate-dup-strings": {
+    "expect": [
+      "duplicate_literal"
+    ],
+    "allow": [
+      "classification",
+      "context",
+      "table"
+    ]
+  },
+  "noted-pos-taskdue-is-set": {
+    "expect": [
+      "forgettable"
+    ],
+    "allow": [
+      "classification",
+      "comment",
+      "context",
+      "transform"
+    ]
+  },
+  "noted-pos-update-due-nested-option": {
+    "expect": [
+      "option_state"
+    ],
+    "allow": [
+      "abstraction",
+      "comment"
+    ]
+  },
+  "noted-pos-task-args-builders": {
+    "expect": [
+      "parallel_construction"
+    ],
+    "allow": [
+      "abstraction"
+    ]
+  },
+  "noted-pos-taskdue-from-str-trim": {
+    "expect": [
+      "transform"
+    ],
+    "allow": [
+      "context",
+      "special_case_empty"
+    ]
+  },
+  "noted-pos-trash-remove-unreachable": {
+    "expect": [
+      "nonidiomatic"
+    ],
+    "allow": [
+      "comment",
+      "forgettable",
+      "post_construction"
+    ]
+  },
+  "noted-pos-notepath-is-root": {
+    "expect": [
+      "comment",
+      "forgettable"
+    ],
+    "allow": [
+      "classification",
+      "special_case_empty"
+    ]
+  },
+  "noted-pos-writeable-root-check": {
+    "expect": [
+      "post_construction"
+    ],
+    "allow": [
+      "classification",
+      "comment",
+      "forgettable"
+    ]
+  },
+  "noted-pos-call-tool-error-text": {
+    "expect": [
+      "classification"
+    ],
+    "allow": [
+      "context",
+      "transform"
+    ]
+  },
+  "noted-pos-mint-callback-alias": {
+    "expect": [
+      "abstraction"
+    ],
+    "allow": [
+      "nonidiomatic"
+    ]
+  },
+  "noted-pos-stored-prefix-slice": {
+    "expect": [
+      "transform"
+    ],
+    "allow": [
+      "duplicate_literal",
+      "foreign_layout",
+      "nonidiomatic"
+    ]
+  },
+  "noted-pos-store-search-spell": {
+    "expect": [
+      "foreign_layout",
+      "transform"
+    ],
+    "allow": [
+      "comment",
+      "duplicate_literal",
+      "special_case_empty"
+    ]
+  },
+  "noted-pos-store-collect-literals": {
+    "expect": [
+      "foreign_layout",
+      "silent"
+    ],
+    "allow": [
+      "classification",
+      "comment",
+      "duplicate_literal",
+      "nonidiomatic",
+      "propagation",
+      "transform"
+    ]
+  },
+  "noted-pos-storepath-parse": {
+    "expect": [
+      "classification",
+      "special_case_empty"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "context",
+      "duplicate_literal",
+      "foreign_layout",
+      "nonidiomatic"
+    ]
+  },
+  "noted-pos-toolcall-raw": {
+    "expect": [
+      "abstraction",
+      "classification"
+    ],
+    "allow": [
+      "context",
+      "forgettable",
+      "post_construction"
+    ]
+  },
+  "noted-neg-trash-remove-direct": {
+    "expect": [],
+    "allow": []
+  },
+  "noted-neg-policy-key-trailing-separator": {
+    "expect": [],
+    "allow": [
+      "special_case_empty"
+    ]
+  },
+  "noted-neg-taskdue-none": {
+    "expect": [],
+    "allow": []
+  },
+  "noted-neg-segments-from-store-dispatch": {
+    "expect": [],
+    "allow": [
+      "context",
+      "special_case_empty"
+    ]
+  },
+  "tools-pos-cue-split-placeholder": {
+    "expect": [
+      "placeholder"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "nonidiomatic",
+      "silent",
+      "transform"
+    ]
+  },
+  "tools-pos-cuesheet-bail": {
+    "expect": [
+      "error_erased"
+    ],
+    "allow": [
+      "abstraction",
+      "classification",
+      "comment",
+      "handrolled_format",
+      "post_construction",
+      "transform"
+    ]
+  },
+  "tools-pos-cue-error-grammar-text": {
+    "expect": [
+      "context"
+    ],
+    "allow": [
+      "comment"
+    ]
+  },
+  "tools-pos-cue-format-string-commands": {
+    "expect": [
+      "classification"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "handrolled_format",
+      "nonidiomatic",
+      "transform"
+    ]
+  },
+  "tools-pos-cue-parse-handrolled": {
+    "expect": [
+      "abstraction",
+      "transform"
+    ],
+    "allow": [
+      "comment",
+      "error_erased",
+      "forgettable",
+      "nonidiomatic",
+      "silent"
+    ]
+  },
+  "tools-pos-cue-validate-problems": {
+    "expect": [
+      "post_construction"
+    ],
+    "allow": [
+      "abstraction",
+      "classification",
+      "comment",
+      "context",
+      "nonidiomatic",
+      "propagation",
+      "silent"
+    ]
+  },
+  "tools-pos-charset-malformed-bool": {
+    "expect": [
+      "forgettable"
+    ],
+    "allow": [
+      "abstraction",
+      "nonidiomatic"
+    ]
+  },
+  "tools-pos-env-file-notfound": {
+    "expect": [
+      "silent"
+    ],
+    "allow": [
+      "comment",
+      "nonidiomatic",
+      "placeholder",
+      "propagation"
+    ]
+  },
+  "tools-pos-db-drop-checkpoint": {
+    "expect": [
+      "silent"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "context",
+      "duplicate_literal",
+      "forgettable",
+      "nonidiomatic",
+      "propagation"
+    ]
+  },
+  "tools-pos-redb-tuple-rows": {
+    "expect": [
+      "abstraction"
+    ],
+    "allow": [
+      "classification",
+      "comment",
+      "transform"
+    ]
+  },
+  "tools-pos-hex-dump-consts": {
+    "expect": [
+      "abstraction"
+    ],
+    "allow": [
+      "comment",
+      "nonidiomatic",
+      "silent"
+    ]
+  },
+  "tools-pos-hex-layout-fields": {
+    "expect": [
+      "speculative"
+    ],
+    "allow": [
+      "abstraction",
+      "nonidiomatic"
+    ]
+  },
+  "tools-pos-hash-reader-layers": {
+    "expect": [
+      "speculative"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "layer_reach",
+      "nonidiomatic",
+      "table"
+    ]
+  },
+  "tools-pos-url-new-option": {
+    "expect": [
+      "nonidiomatic"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "leaked_default",
+      "silent"
+    ]
+  },
+  "tools-pos-url-pattern-schemes": {
+    "expect": [
+      "abstraction"
+    ],
+    "allow": [
+      "classification",
+      "comment",
+      "leaked_default",
+      "transform"
+    ]
+  },
+  "tools-pos-is-seven-zip-path": {
+    "expect": [
+      "classification"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "error_erased",
+      "layer_reach"
+    ]
+  },
+  "tools-pos-is-seven-zip-comment": {
+    "expect": [
+      "comment"
+    ],
+    "allow": [
+      "classification"
+    ]
+  },
+  "tools-pos-atomic-write-option-mode": {
+    "expect": [
+      "placeholder"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "leaked_default",
+      "silent"
+    ]
+  },
+  "tools-pos-virsh-hostdev-format": {
+    "expect": [
+      "handrolled_format"
+    ],
+    "allow": [
+      "abstraction",
+      "classification",
+      "comment",
+      "transform"
+    ]
+  },
+  "tools-pos-jd-add-string-inputs": {
+    "expect": [
+      "abstraction",
+      "classification"
+    ],
+    "allow": [
+      "nonidiomatic",
+      "silent",
+      "transform"
+    ]
+  },
+  "tools-pos-cue-track-count-log": {
+    "expect": [
+      "layer_reach"
+    ],
+    "allow": [
+      "abstraction",
+      "classification",
+      "comment",
+      "handrolled_format",
+      "propagation",
+      "transform"
+    ]
+  },
+  "tools-neg-cuesheet-filename": {
+    "expect": [],
+    "allow": [
+      "abstraction"
+    ]
+  },
+  "tools-neg-url-scheme": {
+    "expect": [],
+    "allow": [
+      "comment"
+    ]
+  },
+  "tools-neg-chardet-to-utf8": {
+    "expect": [],
+    "allow": [
+      "abstraction"
+    ]
+  },
+  "tools-neg-cleanup-action-enum": {
+    "expect": [],
+    "allow": []
+  },
+  "tools-neg-jd-input-enum": {
+    "expect": [],
+    "allow": [
+      "comment",
+      "leaked_default",
+      "silent"
+    ]
+  },
+  "bertbox-pos-tmux-inside-bool": {
+    "expect": [
+      "nonidiomatic"
+    ],
+    "allow": [
+      "classification",
+      "forgettable"
+    ]
+  },
+  "bertbox-pos-tmux-error-enum": {
+    "expect": [
+      "error_wrapper"
+    ],
+    "allow": [
+      "abstraction",
+      "context"
+    ]
+  },
+  "bertbox-pos-tmux-comments": {
+    "expect": [
+      "comment"
+    ],
+    "allow": []
+  },
+  "bertbox-neg-tmux-string-errors": {
+    "expect": [],
+    "allow": []
+  },
+  "bertbox-pos-mkv-und-default": {
+    "expect": [
+      "silent"
+    ],
+    "allow": [
+      "comment",
+      "invented_value",
+      "leaked_default",
+      "placeholder"
+    ]
+  },
+  "bertbox-neg-mkv-track-language-result": {
+    "expect": [],
+    "allow": [
+      "comment"
+    ]
+  },
+  "bertbox-neg-mkv-preview-none-marker": {
+    "expect": [],
+    "allow": [
+      "abstraction",
+      "comment",
+      "table"
+    ]
+  },
+  "bertbox-pos-stversions-skip-non-utf8": {
+    "expect": [
+      "silent"
+    ],
+    "allow": []
+  },
+  "bertbox-pos-walk-is-dangling": {
+    "expect": [
+      "classification",
+      "silent"
+    ],
+    "allow": [
+      "comment",
+      "propagation"
+    ]
+  },
+  "bertbox-neg-walk-entries-propagate": {
+    "expect": [],
+    "allow": [
+      "comment"
+    ]
+  },
+  "bertbox-pos-pool-jobs-zero": {
+    "expect": [
+      "abstraction"
+    ],
+    "allow": [
+      "comment",
+      "error_erased",
+      "nonidiomatic"
+    ]
+  },
+  "bertbox-pos-cdemu-device-record": {
+    "expect": [
+      "abstraction",
+      "layer_reach",
+      "runtime_state"
+    ],
+    "allow": [
+      "context",
+      "silent"
+    ]
+  },
+  "bertbox-pos-cdemu-status-duplicate": {
+    "expect": [
+      "abstraction",
+      "post_construction"
+    ],
+    "allow": [
+      "context",
+      "forgettable",
+      "runtime_state"
+    ]
+  },
+  "bertbox-pos-cdemu-doc-comments": {
+    "expect": [
+      "comment"
+    ],
+    "allow": [
+      "error_wrapper"
+    ]
+  },
+  "bertbox-pos-links-keep-predicate": {
+    "expect": [
+      "classification"
+    ],
+    "allow": [
+      "abstraction"
+    ]
+  },
+  "bertbox-pos-install-forced": {
+    "expect": [
+      "comment",
+      "leaked_default"
+    ],
+    "allow": []
+  },
+  "bertbox-pos-lust-placeholder": {
+    "expect": [
+      "duplicate_literal"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "transform"
+    ]
+  },
+  "bertbox-pos-clipboard-refresh-sleep": {
+    "expect": [
+      "timed_wait"
+    ],
+    "allow": [
+      "classification",
+      "forgettable",
+      "silent",
+      "table"
+    ]
+  },
+  "bertbox-pos-exit-code-timeout": {
+    "expect": [
+      "timed_wait"
+    ],
+    "allow": [
+      "comment",
+      "context"
+    ]
+  },
+  "bertbox-pos-exit-code-ansi": {
+    "expect": [
+      "handrolled_format"
+    ],
+    "allow": [
+      "comment",
+      "literal",
+      "silent"
+    ]
+  },
+  "bertbox-neg-dirs-module": {
+    "expect": [],
+    "allow": [
+      "comment"
+    ]
+  },
+  "bertbox-neg-mkvmerge-identify": {
+    "expect": [],
+    "allow": [
+      "comment"
+    ]
+  },
+  "bertbox-neg-case-collisions-json": {
+    "expect": [],
+    "allow": [
+      "comment"
+    ]
+  },
+  "jellium2-pos-menu-item-id-helpers": {
+    "expect": [
+      "abstraction",
+      "forgettable"
+    ],
+    "allow": [
+      "classification",
+      "comment",
+      "nonidiomatic",
+      "post_construction",
+      "silent"
+    ]
+  },
+  "jellium2-pos-flat-index-ids": {
+    "expect": [
+      "abstraction"
+    ],
+    "allow": [
+      "classification",
+      "comment",
+      "forgettable",
+      "nonidiomatic",
+      "silent"
+    ]
+  },
+  "jellium2-pos-cef-menu-guard": {
+    "expect": [
+      "forgettable"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "nonidiomatic",
+      "option_state",
+      "post_construction",
+      "propagation",
+      "silent"
+    ]
+  },
+  "jellium2-pos-run-context-menu-return": {
+    "expect": [
+      "literal"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "forgettable",
+      "nonidiomatic",
+      "propagation",
+      "silent",
+      "transform"
+    ]
+  },
+  "jellium2-pos-popup-options-fields": {
+    "expect": [
+      "abstraction"
+    ],
+    "allow": []
+  },
+  "jellium2-pos-ipc-presence-slot": {
+    "expect": [
+      "literal"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "silent"
+    ]
+  },
+  "jellium2-pos-pending-menus-queue": {
+    "expect": [
+      "cardinality"
+    ],
+    "allow": [
+      "abstraction",
+      "comment",
+      "forgettable",
+      "propagation",
+      "silent"
+    ]
+  },
+  "jellium2-pos-global-channel": {
+    "expect": [
+      "global"
+    ],
+    "allow": [
+      "comment",
+      "silent"
+    ]
+  },
+  "jellium2-neg-cef-menu-finish": {
+    "expect": [],
+    "allow": [
+      "transform"
+    ]
+  },
+  "jellium2-neg-app-channel-send": {
+    "expect": [],
+    "allow": [
+      "comment"
+    ]
+  },
+  "kwinctrl-pos-doc-comments-on-types": {
+    "expect": [
+      "comment"
+    ],
+    "allow": [
+      "abstraction",
+      "classification",
+      "mirror"
+    ]
+  },
+  "kwinctrl-pos-geometry-mirrors-args": {
+    "expect": [
+      "mirror"
+    ],
+    "allow": [
+      "abstraction",
+      "classification",
+      "forgettable"
+    ]
+  },
+  "kwinctrl-pos-scan-doc-comments": {
+    "expect": [
+      "comment"
+    ],
+    "allow": [
+      "abstraction",
+      "classification",
+      "duplicate_literal",
+      "handrolled_format",
+      "nonidiomatic",
+      "propagation",
+      "silent",
+      "transform"
+    ]
+  },
+  "kwinctrl-neg-dictated-enums": {
+    "expect": [],
+    "allow": []
+  },
+  "cloneholio-pos-not-found-option": {
+    "expect": [
+      "option_state"
+    ],
+    "allow": [
+      "abstraction",
+      "forgettable",
+      "nonidiomatic",
+      "propagation",
+      "silent"
+    ]
+  },
+  "cloneholio-pos-filter-admits": {
+    "expect": [
+      "abstraction"
+    ],
+    "allow": [
+      "classification",
+      "forgettable"
+    ]
+  },
+  "cloneholio-pos-lazy-private-cache": {
+    "expect": [
+      "option_state"
+    ],
+    "allow": [
+      "abstraction",
+      "classification",
+      "forgettable",
+      "propagation",
+      "silent"
+    ]
+  },
+  "cloneholio-pos-gitlab-casefold": {
+    "expect": [
+      "transform"
+    ],
+    "allow": [
+      "abstraction",
+      "classification",
+      "foreign_layout",
+      "silent"
+    ]
+  },
+  "cloneholio-neg-http-newtypes": {
+    "expect": [],
+    "allow": [
+      "comment"
+    ]
+  },
+  "cloneholio-neg-sync-log-and-count": {
+    "expect": [],
+    "allow": [
+      "abstraction",
+      "classification",
+      "comment",
+      "silent"
+    ]
+  }
+}

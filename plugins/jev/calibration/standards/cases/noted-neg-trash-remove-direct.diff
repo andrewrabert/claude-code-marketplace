@@ -1,0 +1,10 @@
+diff --git a/crates/core/src/fs/store.rs b/crates/core/src/fs/store.rs
+--- a/crates/core/src/fs/store.rs
++++ b/crates/core/src/fs/store.rs
+@@ -0,0 +151,6 @@
++    pub(crate) async fn remove(&self, at: &WriteablePath) -> Result<()> {
++        let from = at.to_store_path(&self.inner.base)?;
++        let to = at.to_store_path(&self.inner.base.join(TRASH))?;
++        let _guard = self.inner.writes.hold().await;
++        platform::relocate(&from, &to).await
++    }

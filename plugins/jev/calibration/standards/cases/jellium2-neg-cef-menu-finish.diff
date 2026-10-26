@@ -1,0 +1,64 @@
+diff --git a/src/jfn_cef/src/client.rs b/src/jfn_cef/src/client.rs
+--- a/src/jfn_cef/src/client.rs
++++ b/src/jfn_cef/src/client.rs
+@@ -0,0 +266,60 @@
++pub(crate) struct Menu {
++    showing: Option<MenuSerial>,
++    app: Arc<jfn_platform_abi::App>,
++}
++
++impl Menu {
++    pub(crate) fn open_context_menu(
++        &mut self,
++        callback: RunContextMenuCallback,
++        model: &MenuModel,
++        anchor: LogicalPoint,
++        sender: std::sync::mpsc::Sender<CefMsg>,
++    ) {
++        let mut builder = self.app.new_menu(anchor);
++        let serial = builder.serial();
++        let mut run = Vec::new();
++        for i in 0..model.count() {
++            let t: sys::cef_menu_item_type_t = model.type_at(i).into();
++            if t == sys::cef_menu_item_type_t::MENUITEMTYPE_SEPARATOR {
++                builder = builder.add_items(std::mem::take(&mut run));
++                continue;
++            }
++            let cb = callback.clone();
++            let command_id = model.command_id_at(i);
++            run.push(Item {
++                label: strip_accelerator(&userfree_to_string(&model.label_at(i))),
++                enabled: model.is_enabled_at(i) != 0,
++                value: ChannelValue::new(
++                    sender.clone(),
++                    CefMsg::Menu {
++                        serial,
++                        callback: Box::new(move || cb.cont(command_id, EventFlags::default())),
++                    },
++                ),
++            });
++        }
++        let builder = builder.add_items(run).add_on_closed(ChannelValue::new(
++            sender,
++            CefMsg::Menu {
++                serial,
++                callback: Box::new(move || callback.cancel()),
++            },
++        ));
++        self.showing = Some(serial);
++        self.app.open_context_menu(builder);
++    }
++
++    pub(crate) fn open_dropdown(&mut self, builder: MenuBuilder) {
++        self.showing = Some(builder.serial());
++        self.app.open_dropdown(builder);
++    }
++
++    pub(crate) fn finish(&mut self, message: CefMsg) {
++        let CefMsg::Menu { serial, callback } = message;
++        if self.showing == Some(serial) {
++            self.showing = None;
++            callback();
++        }
++    }
++}

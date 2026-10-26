@@ -1,0 +1,47 @@
+diff --git a/src/backend/bashkit.rs b/src/backend/bashkit.rs
+--- a/src/backend/bashkit.rs
++++ b/src/backend/bashkit.rs
+@@ -0,0 +300,43 @@
++    /// Runs `op` against the session file: restore before, save after success.
++    async fn session<T>(
++        &self,
++        op: impl AsyncFnOnce(&mut bashkit::Bash) -> anyhow::Result<T>,
++    ) -> anyhow::Result<T> {
++        let mut bash = self.bash.lock().await;
++        let Some(path) = &self.session else {
++            return op(&mut bash).await;
++        };
++        let lock = std::fs::OpenOptions::new()
++            .write(true)
++            .create(true)
++            .truncate(false)
++            .open(with_suffix(path, ".lock"))
++            .with_context(|| format!("session {}", path.display()))?;
++        lock.lock()
++            .with_context(|| format!("session {}", path.display()))?;
++        session_parent(path)?;
++        if let Some(snapshot) = read_session(path)? {
++            self.resume(&mut bash, &snapshot).await?;
++        }
++        let result = op(&mut bash).await?;
++        write_session(path, &bash.snapshot()?)?;
++        drop(lock);
++        Ok(result)
++    }
++
++    pub async fn exec_script(
++        &self,
++        script: &str,
++        arg0: &str,
++        args: Vec<String>,
++        stdin: Option<Vec<u8>>,
++    ) -> anyhow::Result<bashkit::ExecResult> {
++        let mut options = bashkit::ExecOptions::new().arg0(arg0).positional(args);
++        if let Some(stdin) = stdin {
++            options = options.stdin(stdin);
++        }
++        self.session(async |bash: &mut bashkit::Bash| {
++            Ok(bash.exec_with_options(script, options).await?)
++        })
++        .await
++    }

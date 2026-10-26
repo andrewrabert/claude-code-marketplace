@@ -1,0 +1,186 @@
+diff --git a/src/hash.rs b/src/hash.rs
+--- a/src/hash.rs
++++ b/src/hash.rs
+@@ -0,0 +1,182 @@
++//! Lowercase hex hashes, computed by readers that hash what passes through them.
++
++use std::fs::File;
++use std::io::{self, Read};
++use std::path::Path;
++
++use anyhow::{Context, Result};
++use md5::Md5;
++use serde::Serialize;
++use sha1::Sha1;
++use sha2::{Digest, Sha256};
++
++const BUFFER_SIZE: usize = 16 * 1024 * 1024;
++
++const IN_MEMORY: &str = "reading from memory cannot fail";
++
++pub fn sha256(reader: impl Read) -> io::Result<String> {
++    drain(Reader::sha256(reader))
++}
++
++pub fn sha256_file(path: &Path) -> Result<String> {
++    File::open(path)
++        .and_then(sha256)
++        .with_context(|| format!("reading {}", path.display()))
++}
++
++pub fn sha256_bytes(bytes: &[u8]) -> String {
++    sha256(bytes).expect(IN_MEMORY)
++}
++
++pub fn md5_bytes(bytes: &[u8]) -> String {
++    drain(Reader::md5(bytes)).expect(IN_MEMORY)
++}
++
++#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
++pub struct Hashes {
++    pub crc32: String,
++    pub md5: String,
++    pub sha1: String,
++    pub sha256: String,
++}
++
++impl Hashes {
++    pub fn of_file(path: &Path) -> io::Result<Self> {
++        Hashes::of_reader(File::open(path)?)
++    }
++
++    /// One pass over `reader`: each layer hashes the bytes on their way out.
++    pub fn of_reader(reader: impl Read) -> io::Result<Self> {
++        let mut reader = Reader::sha256(Reader::sha1(Reader::md5(Reader::crc32(reader))));
++        let mut buffer = vec![0; BUFFER_SIZE];
++        while reader.read(&mut buffer)? != 0 {}
++        let (reader, sha256) = reader.finish();
++        let (reader, sha1) = reader.finish();
++        let (reader, md5) = reader.finish();
++        let (_, crc32) = reader.finish();
++        Ok(Hashes {
++            crc32,
++            md5,
++            sha1,
++            sha256,
++        })
++    }
++
++    pub fn named(&self) -> [(&'static str, &str); 4] {
++        [
++            ("crc32", &self.crc32),
++            ("md5", &self.md5),
++            ("sha1", &self.sha1),
++            ("sha256", &self.sha256),
++        ]
++    }
++}
++
++/// Reads everything from `reader` and returns its hash.
++fn drain<R: Read, A: Algorithm>(mut reader: Reader<R, A>) -> io::Result<String> {
++    io::copy(&mut reader, &mut io::sink())?;
++    Ok(reader.finish().1)
++}
++
++/// A hash being fed bytes.
++trait Algorithm {
++    fn update(&mut self, bytes: &[u8]);
++    fn hex(self) -> String;
++}
++
++/// Passes reads through from `inner`, hashing every byte.
++struct Reader<R, A> {
++    inner: R,
++    algorithm: A,
++}
++
++impl<R: Read, A: Algorithm> Read for Reader<R, A> {
++    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
++        let read = self.inner.read(buf)?;
++        self.algorithm.update(&buf[..read]);
++        Ok(read)
++    }
++}
++
++impl<R, A: Algorithm> Reader<R, A> {
++    /// The inner reader and the hash of everything read so far.
++    fn finish(self) -> (R, String) {
++        (self.inner, self.algorithm.hex())
++    }
++}
++
++impl<R> Reader<R, crc32fast::Hasher> {
++    fn crc32(inner: R) -> Self {
++        Reader {
++            inner,
++            algorithm: crc32fast::Hasher::new(),
++        }
++    }
++}
++
++impl Algorithm for crc32fast::Hasher {
++    fn update(&mut self, bytes: &[u8]) {
++        crc32fast::Hasher::update(self, bytes);
++    }
++
++    fn hex(self) -> String {
++        format!("{:x}", self.finalize())
++    }
++}
++
++impl<R> Reader<R, Md5> {
++    fn md5(inner: R) -> Self {
++        Reader {
++            inner,
++            algorithm: Md5::new(),
++        }
++    }
++}
++
++impl Algorithm for Md5 {
++    fn update(&mut self, bytes: &[u8]) {
++        Digest::update(self, bytes);
++    }
++
++    fn hex(self) -> String {
++        hex::encode(self.finalize())
++    }
++}
++
++impl<R> Reader<R, Sha1> {
++    fn sha1(inner: R) -> Self {
++        Reader {
++            inner,
++            algorithm: Sha1::new(),
++        }
++    }
++}
++
++impl Algorithm for Sha1 {
++    fn update(&mut self, bytes: &[u8]) {
++        Digest::update(self, bytes);
++    }
++
++    fn hex(self) -> String {
++        hex::encode(self.finalize())
++    }
++}
++
++impl<R> Reader<R, Sha256> {
++    fn sha256(inner: R) -> Self {
++        Reader {
++            inner,
++            algorithm: Sha256::new(),
++        }
++    }
++}
++
++impl Algorithm for Sha256 {
++    fn update(&mut self, bytes: &[u8]) {
++        Digest::update(self, bytes);
++    }
++
++    fn hex(self) -> String {
++        hex::encode(self.finalize())
++    }
++}

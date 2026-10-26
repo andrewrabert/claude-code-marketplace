@@ -1,0 +1,90 @@
+diff --git a/src/sqlite.rs b/src/sqlite.rs
+--- a/src/sqlite.rs
++++ b/src/sqlite.rs
+@@ -0,0 +66,86 @@
++pub enum Mode {
++    ReadWrite { vacuum: bool },
++    ReadOnly,
++}
++
++pub struct Db {
++    pub runtime: Runtime,
++    pub connection: turso::Connection,
++    path: PathBuf,
++    read_only: bool,
++}
++
++impl Db {
++    pub fn open(path: &Path, mode: Mode) -> Result<Db> {
++        let path_str = path
++            .to_str()
++            .with_context(|| format!("path is not UTF-8: {}", path.display()))?;
++        let wal = PathBuf::from(format!("{path_str}-wal"));
++        if fs::metadata(&wal).is_ok_and(|metadata| metadata.len() > 0) {
++            bail!(
++                "{} exists; checkpoint it first: sqlite3 {} 'PRAGMA wal_checkpoint(TRUNCATE)'",
++                wal.display(),
++                path.display()
++            );
++        }
++        let io = MemoryWalIo {
++            disk: Arc::new(
++                PlatformIO::new().with_context(|| format!("opening {}", path.display()))?,
++            ),
++            memory: Arc::new(MemoryIO::new()),
++        };
++        let runtime = tokio::runtime::Builder::new_current_thread().build()?;
++        let connection = runtime
++            .block_on(async {
++                let mut builder = turso::Builder::new_local(path_str).with_io_impl(Arc::new(io));
++                builder = match mode {
++                    Mode::ReadWrite { vacuum: true } => builder.experimental_vacuum(true),
++                    Mode::ReadWrite { vacuum: false } => builder,
++                    Mode::ReadOnly => builder.read_only(true),
++                };
++                let db = builder.build().await?;
++                db.connect()
++            })
++            .with_context(|| format!("opening {}", path.display()))?;
++        Ok(Db {
++            runtime,
++            connection,
++            path: path.to_path_buf(),
++            read_only: matches!(mode, Mode::ReadOnly),
++        })
++    }
++
++    /// Moves the in-memory WAL into the database file.
++    pub fn checkpoint(&self) -> Result<()> {
++        if self.read_only {
++            return Ok(());
++        }
++        let connection = &self.connection;
++        let busy = self
++            .runtime
++            .block_on(async {
++                let mut rows = connection
++                    .query("PRAGMA wal_checkpoint(TRUNCATE)", ())
++                    .await?;
++                let mut busy = 0;
++                if let Some(row) = rows.next().await? {
++                    busy = row.get::<i64>(0)?;
++                }
++                while rows.next().await?.is_some() {}
++                Ok::<_, turso::Error>(busy)
++            })
++            .with_context(|| format!("checkpointing {}", self.path.display()))?;
++        if busy != 0 {
++            bail!("checkpointing {}: database is busy", self.path.display());
++        }
++        Ok(())
++    }
++}
++
++impl Drop for Db {
++    fn drop(&mut self) {
++        if let Err(error) = self.checkpoint() {
++            eprintln!("{error:#}");
++        }
++    }
++}

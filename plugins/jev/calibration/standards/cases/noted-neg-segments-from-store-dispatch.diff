@@ -1,0 +1,45 @@
+diff --git a/crates/core/src/domain/segment.rs b/crates/core/src/domain/segment.rs
+--- a/crates/core/src/domain/segment.rs
++++ b/crates/core/src/domain/segment.rs
+@@ -0,0 +300,41 @@
++impl Segments {
++    pub(super) fn from_store(store_path: &str) -> Result<Segments> {
++        let rest = store_path.strip_prefix(Path::SEPARATOR).unwrap_or(store_path);
++        let parts: Vec<&str> = match rest {
++            "" => Vec::new(),
++            rest => rest.split(Path::SEPARATOR).collect(),
++        };
++
++        let mut out = Vec::new();
++        let mut rest = parts.as_slice();
++        while !rest.is_empty() {
++            let (segment, tail) = match rest {
++                [Task::DIR, ..] => Task::from_store(rest)?,
++                [Log::DIR, ..] => Log::from_store(rest)?,
++                _ => Note::from_store(rest)?,
++            };
++            out.push(segment);
++            rest = tail;
++        }
++        Ok(Segments(out))
++    }
++}
++
++impl Task {
++    fn from_store<'a>(parts: &'a [&'a str]) -> Result<(Segment, &'a [&'a str])> {
++        let [Task::DIR, number, tail @ ..] = parts else {
++            return Err(rejected("a task is its directory and its number"));
++        };
++        let task = number
++            .parse::<NonZeroU64>()
++            .ok()
++            .map(Task)
++            .filter(|task| task.0.to_string() == *number)
++            .ok_or_else(|| rejected(format!("{number}: not a task number")))?;
++        match tail {
++            [Task::FILE] => Ok((Segment::Task(task), &[])),
++            [Task::FILE, ..] => Err(rejected("nothing follows a task's file")),
++            tail => Ok((Segment::Task(task), tail)),
++        }
++    }
++}

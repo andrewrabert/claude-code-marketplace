@@ -1,0 +1,11 @@
+diff --git a/src/platform_abi/src/lang.rs b/src/platform_abi/src/lang.rs
+--- a/src/platform_abi/src/lang.rs
++++ b/src/platform_abi/src/lang.rs
+@@ -0,0 +55,7 @@
++        Ok(LanguageLoader(Arc::new(loader)))
++    }
++
++    /// The negotiated language every other localized component follows.
++    pub fn language(&self) -> LanguageIdentifier {
++        i18n_embed::LanguageLoader::current_language(&*self.0)
++    }

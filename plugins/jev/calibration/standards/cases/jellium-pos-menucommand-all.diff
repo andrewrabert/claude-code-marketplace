@@ -1,0 +1,67 @@
+diff --git a/src/jfn_cef/src/client.rs b/src/jfn_cef/src/client.rs
+--- a/src/jfn_cef/src/client.rs
++++ b/src/jfn_cef/src/client.rs
+@@ -0,0 +252,63 @@
++/// A CEF context menu command the app draws.
++#[derive(Copy, Clone)]
++enum MenuCommand {
++    Back,
++    Forward,
++    Reload,
++    Undo,
++    Redo,
++    Cut,
++    Copy,
++    Paste,
++    SelectAll,
++}
++
++impl MenuCommand {
++    const ALL: &[MenuCommand] = &[
++        MenuCommand::Back,
++        MenuCommand::Forward,
++        MenuCommand::Reload,
++        MenuCommand::Undo,
++        MenuCommand::Redo,
++        MenuCommand::Cut,
++        MenuCommand::Copy,
++        MenuCommand::Paste,
++        MenuCommand::SelectAll,
++    ];
++
++    /// The command CEF's `command_id` names; `None` for one the app does not draw.
++    fn from_id(command_id: c_int) -> Option<MenuCommand> {
++        MenuCommand::ALL
++            .iter()
++            .copied()
++            .find(|command| command.id().get_raw() as c_int == command_id)
++    }
++
++    fn id(self) -> MenuId {
++        match self {
++            MenuCommand::Back => MenuId::BACK,
++            MenuCommand::Forward => MenuId::FORWARD,
++            MenuCommand::Reload => MenuId::RELOAD,
++            MenuCommand::Undo => MenuId::UNDO,
++            MenuCommand::Redo => MenuId::REDO,
++            MenuCommand::Cut => MenuId::CUT,
++            MenuCommand::Copy => MenuId::COPY,
++            MenuCommand::Paste => MenuId::PASTE,
++            MenuCommand::SelectAll => MenuId::SELECT_ALL,
++        }
++    }
++
++    fn label(self) -> MenuLabel {
++        match self {
++            MenuCommand::Back => MenuLabel::Back,
++            MenuCommand::Forward => MenuLabel::Forward,
++            MenuCommand::Reload => MenuLabel::Reload,
++            MenuCommand::Undo => MenuLabel::Undo,
++            MenuCommand::Redo => MenuLabel::Redo,
++            MenuCommand::Cut => MenuLabel::Cut,
++            MenuCommand::Copy => MenuLabel::Copy,
++            MenuCommand::Paste => MenuLabel::Paste,
++            MenuCommand::SelectAll => MenuLabel::SelectAll,
++        }
++    }
++}

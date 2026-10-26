@@ -1,0 +1,16 @@
+diff --git a/src/tools/bertbox/install.rs b/src/tools/bertbox/install.rs
+--- a/src/tools/bertbox/install.rs
++++ b/src/tools/bertbox/install.rs
+@@ -0,0 +85,12 @@
++impl Install {
++    /// The equivalent of `bertbox install --force DIR`.
++    pub fn forced(dir: PathBuf) -> Self {
++        Install {
++            dir,
++            force: true,
++            link: Link::Symlink,
++            tools: Vec::new(),
++            groups: Vec::new(),
++            prefixed: false,
++        }
++    }

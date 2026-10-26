@@ -1,0 +1,88 @@
+diff --git a/src/tools/virt_usb/domain.rs b/src/tools/virt_usb/domain.rs
+--- a/src/tools/virt_usb/domain.rs
++++ b/src/tools/virt_usb/domain.rs
+@@ -0,0 +47,84 @@
++fn parse_id(id: &str) -> Result<u16> {
++    let hex = id.strip_prefix("0x").unwrap_or(id);
++    u16::from_str_radix(hex, 16).with_context(|| format!("parsing the USB ID {id:?}"))
++}
++
++pub struct State {
++    pub active: bool,
++    /// The host USB devices passed through.
++    pub attached: HashSet<UsbId>,
++}
++
++pub struct Domain {
++    virsh: Virsh<'static>,
++    pub name: String,
++}
++
++impl Domain {
++    pub fn new(name: String) -> Self {
++        Domain {
++            virsh: Virsh::new(URI),
++            name,
++        }
++    }
++
++    /// Every domain's name and whether it is active.
++    pub fn all() -> Result<Vec<(String, bool)>> {
++        let virsh = Virsh::new(URI);
++        let active = virsh.domains(false)?.into_iter().collect::<HashSet<_>>();
++        Ok(virsh
++            .domains(true)?
++            .into_iter()
++            .map(|name| {
++                let is_active = active.contains(&name);
++                (name, is_active)
++            })
++            .collect())
++    }
++
++    pub fn state(&self) -> Result<State> {
++        let xml = self.virsh.dumpxml(&self.name)?;
++        let domain: DomainXml = quick_xml::de::from_str(&xml)
++            .with_context(|| format!("parsing the XML of {:?}", self.name))?;
++        let mut attached = HashSet::new();
++        for hostdev in domain.devices.hostdev {
++            if hostdev.kind.as_deref() != Some("usb") {
++                continue;
++            }
++            if let Some(SourceXml {
++                vendor: Some(vendor),
++                product: Some(product),
++            }) = hostdev.source
++            {
++                attached.insert(UsbId {
++                    vendor: parse_id(&vendor.id)?,
++                    product: parse_id(&product.id)?,
++                });
++            }
++        }
++        Ok(State {
++            active: domain.id.is_some(),
++            attached,
++        })
++    }
++
++    pub fn attach(&self, id: UsbId) -> Result<()> {
++        self.virsh.attach_device(&self.name, &hostdev(id))
++    }
++
++    pub fn detach(&self, id: UsbId) -> Result<()> {
++        self.virsh.detach_device(&self.name, &hostdev(id))
++    }
++}
++
++fn hostdev(id: UsbId) -> String {
++    format!(
++        "<hostdev mode='subsystem' type='usb' managed='yes'>
++  <source>
++    <vendor id='0x{:04x}'/>
++    <product id='0x{:04x}'/>
++  </source>
++</hostdev>",
++        id.vendor, id.product
++    )
++}

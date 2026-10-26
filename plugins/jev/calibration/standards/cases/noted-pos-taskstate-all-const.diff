@@ -1,0 +1,14 @@
+diff --git a/crates/core/src/tasks.rs b/crates/core/src/tasks.rs
+--- a/crates/core/src/tasks.rs
++++ b/crates/core/src/tasks.rs
+@@ -0,0 +29,10 @@
++impl TaskState {
++    pub const ALL: [TaskState; 6] = [
++        TaskState::Created,
++        TaskState::Started,
++        TaskState::Blocked,
++        TaskState::Completed,
++        TaskState::Rejected,
++        TaskState::Invalid,
++    ];
++}

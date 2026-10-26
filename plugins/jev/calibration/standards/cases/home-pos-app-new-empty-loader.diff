@@ -1,0 +1,17 @@
+diff --git a/src/platform_abi/src/app.rs b/src/platform_abi/src/app.rs
+--- a/src/platform_abi/src/app.rs
++++ b/src/platform_abi/src/app.rs
+@@ -0,0 +40,13 @@
++        next_serial: impl Fn() -> MenuSerial + Send + Sync + 'static,
++    ) -> App {
++        let requested = DesktopLanguageRequester::requested_languages();
++        let locale = LanguageLoader::new(&requested).unwrap_or_else(|error| {
++            tracing::error!(%error, ?requested, "loading translations failed");
++            LanguageLoader(Arc::new(fluent_language_loader!()))
++        });
++        App {
++            channel: Box::new(move |msg| drop(channel.send(T::from(msg)))),
++            next_serial: Box::new(next_serial),
++            locale,
++        }
++    }

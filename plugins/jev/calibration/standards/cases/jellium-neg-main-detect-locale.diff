@@ -1,0 +1,13 @@
+diff --git a/src/jfn_rust/src/app.rs b/src/jfn_rust/src/app.rs
+--- a/src/jfn_rust/src/app.rs
++++ b/src/jfn_rust/src/app.rs
+@@ -0,0 +909,9 @@
++    init_logging(opts.log_file.as_deref(), &opts.log_level, &version);
++    let locale = match jfn_platform_abi::lang::detect() {
++        Ok(locale) => locale,
++        Err(error) => {
++            tracing::error!(target: "Main", "{error}");
++            return 1;
++        }
++    };
++    let metadata = match application_metadata(version) {

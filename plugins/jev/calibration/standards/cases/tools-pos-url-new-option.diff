@@ -1,0 +1,48 @@
+diff --git a/src/urls.rs b/src/urls.rs
+--- a/src/urls.rs
++++ b/src/urls.rs
+@@ -0,0 +1,44 @@
++use std::collections::HashSet;
++use std::ops::Deref;
++
++use linkify::{LinkFinder, LinkKind};
++
++pub const FTP: &str = "ftp";
++pub const HTTP: &str = "http";
++pub const HTTPS: &str = "https";
++
++pub struct Url<'t> {
++    text: &'t str,
++    scheme_end: usize,
++}
++
++impl<'t> Url<'t> {
++    /// `None` if `text` has no `://`.
++    pub fn new(text: &'t str) -> Option<Self> {
++        let scheme_end = text.find("://")?;
++        Some(Self { text, scheme_end })
++    }
++
++    pub fn scheme(&self) -> &'t str {
++        &self.text[..self.scheme_end]
++    }
++}
++
++impl Deref for Url<'_> {
++    type Target = str;
++
++    fn deref(&self) -> &str {
++        self.text
++    }
++}
++
++/// URLs in `text`, in order of first appearance, each once.
++pub fn unique_urls(text: &str) -> impl Iterator<Item = Url<'_>> {
++    let mut finder = LinkFinder::new();
++    finder.kinds(&[LinkKind::Url]);
++    let mut seen = HashSet::new();
++    finder
++        .links(text)
++        .filter_map(|link| Url::new(link.as_str()))
++        .filter(move |url| seen.insert(url.text))
++}

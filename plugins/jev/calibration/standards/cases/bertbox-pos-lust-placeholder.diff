@@ -1,0 +1,102 @@
+diff --git a/src/tools/lust.rs b/src/tools/lust.rs
+--- a/src/tools/lust.rs
++++ b/src/tools/lust.rs
+@@ -0,0 +18,98 @@
++const REMOTES: [&str; 2] = ["upstream", "origin"];
++const METADATA_FILE: &str = ".lust.json";
++const LUST_DIR_PLACEHOLDER: &str = "@LUST_DIR@";
++const METADATA_FILE_PLACEHOLDER: &str = "@METADATA_FILE@";
++
++const LUST_JUST: &str = "\
++# Print the path to this justfile
++[group('lust')]
++file:
++    @echo \"{{ justfile() }}\"
++
++# Print the directory holding this justfile
++[group('lust')]
++dir:
++    @echo \"{{ justfile_directory() }}\"
++
++# Print agent guidance for using lust
++[group('lust')]
++agents:
++    @cat '@LUST_DIR@/AGENTS.md'
++
++# List every directory lust knows about and what it belongs to
++[group('lust')]
++repos:
++    @for f in '@LUST_DIR@'/*/@METADATA_FILE@; do printf '%s\\t%s\\n' \"$(dirname \"$f\")\" \"$(jq -r '.remote // .path' \"$f\")\"; done
++";
++
++const AGENTS_MD: &str = "\
++# `lust` — personal per-repo justfile
++
++`lust` runs `just` against a personal justfile stored *outside* the current
++project. Use it for personal recipes that should not be committed.
++
++- Each project gets a directory under `~/.config/just/lust/` named by a hash.
++  The key is the git remote URL (`upstream`, then `origin`), else the absolute
++  path of the git root, else the absolute working directory.
++- `<dir>/@METADATA_FILE@` records the key as `{\"remote\": ...}` or `{\"path\": ...}`.
++- `<dir>/justfile` is the personal justfile; lust creates it on first run.
++- `lust` (no args) — list recipes.
++- `lust dir` — print the project's lust directory.
++- `lust file` — print the path to the personal justfile.
++- `lust repos` — list every lust directory and its key.
++";
++
++#[derive(ClapArgs)]
++#[command(about = "Run just against a personal per-project justfile stored outside the project")]
++pub struct Lust {
++    /// Arguments passed to just
++    #[arg(
++        value_name = "ARG",
++        trailing_var_arg = true,
++        allow_hyphen_values = true
++    )]
++    args: Vec<OsString>,
++}
++
++impl Tool for Lust {
++    fn run(self) -> ExitCode {
++        match run(self) {
++            Ok(()) => ExitCode::SUCCESS,
++            Err(error) => {
++                eprintln!("Error: {error:?}");
++                ExitCode::FAILURE
++            }
++        }
++    }
++}
++
++/// The global lust directory, holding the shared module, agent guidance, and every project directory.
++struct LustDir {
++    path: PathBuf,
++}
++
++impl LustDir {
++    fn locate() -> Result<Self> {
++        let strategy = Xdg::new().context("locating the home directory")?;
++        Ok(Self {
++            path: strategy.config_dir().join("just").join("lust"),
++        })
++    }
++
++    fn module(&self) -> PathBuf {
++        self.path.join("lust.just")
++    }
++
++    fn ensure_shared(&self) -> Result<()> {
++        let module = LUST_JUST
++            .replace(LUST_DIR_PLACEHOLDER, &self.path.to_string_lossy())
++            .replace(METADATA_FILE_PLACEHOLDER, METADATA_FILE);
++        write_if_changed(&self.module(), &module)?;
++        let agents = AGENTS_MD.replace(METADATA_FILE_PLACEHOLDER, METADATA_FILE);
++        write_if_changed(&self.path.join("AGENTS.md"), &agents)
++    }
++
++    fn project_dir(&self, key: &Key) -> PathBuf {
++        self.path.join(&key.0)
++    }
++}

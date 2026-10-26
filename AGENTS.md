@@ -18,6 +18,7 @@ justfile                               # Task runner — see `just --list`
 
 ## Plugins
 
+- `jev` - Rust code and surface spec review against standards with jev
 - `handoff-verifier` - self-verification hooks managed by in-session tools (a mod)
 - `noted` - skills for the noted CLI
 - `bashkit-agents` - sandboxed PR review against local standards

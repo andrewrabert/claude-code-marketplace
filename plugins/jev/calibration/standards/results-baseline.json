@@ -1,0 +1,231 @@
+{
+  "jev_review": {
+    "neg-expected-absence": {
+      "classification": "OK",
+      "forgettable": "OK",
+      "post_construction": "OK",
+      "propagation": "OK",
+      "silent": "OK"
+    },
+    "neg-parsed-newtype": {
+      "classification": "OK",
+      "forgettable": "OK",
+      "post_construction": "UNSETTLED",
+      "propagation": "OK",
+      "silent": "OK"
+    },
+    "neg-propagates": {
+      "classification": "OK",
+      "forgettable": "OK",
+      "post_construction": "OK",
+      "propagation": "OK",
+      "silent": "OK"
+    },
+    "pos-bool-on-failure": {
+      "classification": "OK",
+      "forgettable": "OK",
+      "post_construction": "OK",
+      "propagation": "OK",
+      "silent": "VIOLATION"
+    },
+    "pos-check-after-construction": {
+      "classification": "OK",
+      "forgettable": "OK",
+      "post_construction": "VIOLATION",
+      "propagation": "OK",
+      "silent": "OK"
+    },
+    "pos-forgettable-check": {
+      "classification": "OK",
+      "forgettable": "OK",
+      "post_construction": "VIOLATION",
+      "propagation": "OK",
+      "silent": "OK"
+    },
+    "pos-log-and-continue": {
+      "classification": "OK",
+      "forgettable": "OK",
+      "post_construction": "OK",
+      "propagation": "UNSETTLED",
+      "silent": "OK"
+    },
+    "pos-mechanism-types": {
+      "classification": "UNSETTLED",
+      "forgettable": "VIOLATION",
+      "post_construction": "OK",
+      "propagation": "OK",
+      "silent": "OK"
+    },
+    "pos-silent-defaults": {
+      "classification": "OK",
+      "forgettable": "OK",
+      "post_construction": "OK",
+      "propagation": "OK",
+      "silent": "VIOLATION"
+    },
+    "session-hexd-parsers": {
+      "classification": "UNSETTLED",
+      "forgettable": "UNSETTLED",
+      "post_construction": "UNSETTLED",
+      "propagation": "OK",
+      "silent": "OK"
+    },
+    "session-source-tests": {
+      "classification": "OK",
+      "forgettable": "OK",
+      "post_construction": "UNSETTLED",
+      "propagation": "OK",
+      "silent": "OK"
+    },
+    "session-source-url": {
+      "classification": "VIOLATION",
+      "forgettable": "UNSETTLED",
+      "post_construction": "UNSETTLED",
+      "propagation": "OK",
+      "silent": "UNSETTLED"
+    },
+    "session-split-scheme": {
+      "classification": "OK",
+      "forgettable": "OK",
+      "post_construction": "OK",
+      "propagation": "OK",
+      "silent": "OK"
+    },
+    "session-ud-unescape": {
+      "classification": "UNSETTLED",
+      "forgettable": "OK",
+      "post_construction": "UNSETTLED",
+      "propagation": "OK",
+      "silent": "OK"
+    },
+    "session-udisksctl-line": {
+      "classification": "UNSETTLED",
+      "forgettable": "UNSETTLED",
+      "post_construction": "UNSETTLED",
+      "propagation": "OK",
+      "silent": "OK"
+    }
+  },
+  "standards": {
+    "neg-expected-absence": {
+      "check-after-construction": 0.04,
+      "forgettable-check": 0.08,
+      "intermediate-abstraction": 0.37,
+      "non-idiomatic-error": 0.79,
+      "propagation-stops-early": 0.8,
+      "silent-failure": 0.68
+    },
+    "neg-parsed-newtype": {
+      "check-after-construction": 0.11,
+      "forgettable-check": 0.06,
+      "intermediate-abstraction": 0.14,
+      "non-idiomatic-error": 0.04,
+      "propagation-stops-early": 0.08,
+      "silent-failure": 0.14
+    },
+    "neg-propagates": {
+      "check-after-construction": 0.04,
+      "forgettable-check": 0.05,
+      "intermediate-abstraction": 0.12,
+      "non-idiomatic-error": 0.03,
+      "propagation-stops-early": 0.1,
+      "silent-failure": 0.04
+    },
+    "pos-bool-on-failure": {
+      "check-after-construction": 0.04,
+      "forgettable-check": 0.17,
+      "intermediate-abstraction": 0.35,
+      "non-idiomatic-error": 0.98,
+      "propagation-stops-early": 0.87,
+      "silent-failure": 0.95
+    },
+    "pos-check-after-construction": {
+      "check-after-construction": 0.95,
+      "forgettable-check": 0.09,
+      "intermediate-abstraction": 0.56,
+      "non-idiomatic-error": 0.97,
+      "propagation-stops-early": 0.38,
+      "silent-failure": 0.03
+    },
+    "pos-forgettable-check": {
+      "check-after-construction": 0.84,
+      "forgettable-check": 0.9,
+      "intermediate-abstraction": 0.66,
+      "non-idiomatic-error": 0.92,
+      "propagation-stops-early": 0.13,
+      "silent-failure": 0.38
+    },
+    "pos-log-and-continue": {
+      "check-after-construction": 0.06,
+      "forgettable-check": 0.11,
+      "intermediate-abstraction": 0.1,
+      "non-idiomatic-error": 0.95,
+      "propagation-stops-early": 0.88,
+      "silent-failure": 0.96
+    },
+    "pos-mechanism-types": {
+      "check-after-construction": 0.07,
+      "forgettable-check": 0.21,
+      "intermediate-abstraction": 0.94,
+      "non-idiomatic-error": 0.03,
+      "propagation-stops-early": 0.06,
+      "silent-failure": 0.08
+    },
+    "pos-silent-defaults": {
+      "check-after-construction": 0.05,
+      "forgettable-check": 0.11,
+      "intermediate-abstraction": 0.14,
+      "non-idiomatic-error": 0.95,
+      "propagation-stops-early": 0.91,
+      "silent-failure": 0.98
+    },
+    "session-hexd-parsers": {
+      "check-after-construction": 0.42,
+      "forgettable-check": 0.22,
+      "intermediate-abstraction": 0.55,
+      "non-idiomatic-error": 0.44,
+      "propagation-stops-early": 0.09,
+      "silent-failure": 0.25
+    },
+    "session-source-tests": {
+      "check-after-construction": 0.3,
+      "forgettable-check": 0.11,
+      "intermediate-abstraction": 0.54,
+      "non-idiomatic-error": 0.89,
+      "propagation-stops-early": 0.15,
+      "silent-failure": 0.23
+    },
+    "session-source-url": {
+      "check-after-construction": 0.24,
+      "forgettable-check": 0.15,
+      "intermediate-abstraction": 0.39,
+      "non-idiomatic-error": 0.34,
+      "propagation-stops-early": 0.37,
+      "silent-failure": 0.73
+    },
+    "session-split-scheme": {
+      "check-after-construction": 0.05,
+      "forgettable-check": 0.2,
+      "intermediate-abstraction": 0.18,
+      "non-idiomatic-error": 0.66,
+      "propagation-stops-early": 0.78,
+      "silent-failure": 0.72
+    },
+    "session-ud-unescape": {
+      "check-after-construction": 0.24,
+      "forgettable-check": 0.12,
+      "intermediate-abstraction": 0.16,
+      "non-idiomatic-error": 0.8,
+      "propagation-stops-early": 0.48,
+      "silent-failure": 0.66
+    },
+    "session-udisksctl-line": {
+      "check-after-construction": 0.39,
+      "forgettable-check": 0.2,
+      "intermediate-abstraction": 0.64,
+      "non-idiomatic-error": 0.12,
+      "propagation-stops-early": 0.18,
+      "silent-failure": 0.21
+    }
+  }
+}

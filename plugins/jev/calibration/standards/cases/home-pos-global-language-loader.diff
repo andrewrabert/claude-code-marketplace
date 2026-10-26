@@ -1,0 +1,31 @@
+diff --git a/src/platform_abi/src/lang.rs b/src/platform_abi/src/lang.rs
+--- a/src/platform_abi/src/lang.rs
++++ b/src/platform_abi/src/lang.rs
+@@ -0,0 +41,27 @@
++/// The process's loader. It holds the fallback language until [`localize`]
++/// selects the system's requested languages. A failed fallback load leaves no
++/// bundles, so every label renders as its message id.
++static LANGUAGE_LOADER: LazyLock<FluentLanguageLoader> = LazyLock::new(|| {
++    let loader: FluentLanguageLoader = fluent_language_loader!();
++    if let Err(error) = loader.load_fallback_language(&Localizations) {
++        tracing::error!(%error, "loading fallback translations failed");
++    }
++    loader
++});
++
++/// Selects the system's requested languages. Call once at startup, before
++/// any label is read.
++pub fn localize() {
++    let requested = DesktopLanguageRequester::requested_languages();
++    if let Err(error) = i18n_embed::select(&*LANGUAGE_LOADER, &Localizations, &requested) {
++        tracing::error!(%error, ?requested, "loading translations failed");
++    }
++}
++
++pub fn label(label: MenuLabel) -> String {
++    menu_text(&LANGUAGE_LOADER, label)
++}
++
++pub fn connect_label(label: ConnectLabel) -> String {
++    connect_text(&LANGUAGE_LOADER, label)
++}

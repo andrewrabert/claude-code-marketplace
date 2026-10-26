@@ -1,0 +1,13 @@
+diff --git a/src/platform_abi/src/app.rs b/src/platform_abi/src/app.rs
+--- a/src/platform_abi/src/app.rs
++++ b/src/platform_abi/src/app.rs
+@@ -0,0 +40,9 @@
++        next_serial: impl Fn() -> MenuSerial + Send + Sync + 'static,
++    ) -> Result<App, I18nEmbedError> {
++        let requested = DesktopLanguageRequester::requested_languages();
++        Ok(App {
++            channel: Box::new(move |msg| drop(channel.send(T::from(msg)))),
++            next_serial: Box::new(next_serial),
++            locale: LanguageLoader::new(&requested)?,
++        })
++    }

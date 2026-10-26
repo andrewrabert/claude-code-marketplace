@@ -1,0 +1,40 @@
+diff --git a/src/tools/syncthing_stversions.rs b/src/tools/syncthing_stversions.rs
+--- a/src/tools/syncthing_stversions.rs
++++ b/src/tools/syncthing_stversions.rs
+@@ -0,0 +107,36 @@
++fn versions(root: &Path, filter: &Filter) -> Result<Versions> {
++    if !root.exists() {
++        bail!("path does not exist: {}", root.display());
++    }
++    let mut versions = Versions::new();
++    for entry in walk::entries(root) {
++        let entry = entry?;
++        if !entry.file_type().is_file() {
++            continue;
++        }
++        let path = entry
++            .path()
++            .strip_prefix(root)
++            .context("walked outside .stversions")?
++            .to_path_buf();
++        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
++            continue;
++        };
++        let Some(captures) = STAMP.captures(name) else {
++            continue;
++        };
++        let stamp = &captures[1];
++        let date = DateTime::strptime("%Y%m%d-%H%M%S", stamp)
++            .with_context(|| format!("parsing the version stamp of {}", path.display()))?;
++        if filter.before.is_some_and(|before| date >= before)
++            || filter.after.is_some_and(|after| date <= after)
++        {
++            continue;
++        }
++        let start = captures.get(0).expect("whole match").start();
++        let extension = captures.get(2).map_or("", |extension| extension.as_str());
++        let original = path.with_file_name(format!("{}{extension}", &name[..start]));
++        versions.entry(original).or_default().insert(path, date);
++    }
++    Ok(versions)
++}

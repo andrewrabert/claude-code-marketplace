@@ -1,0 +1,67 @@
+diff --git a/src/http.rs b/src/http.rs
+--- a/src/http.rs
++++ b/src/http.rs
+@@ -0,0 +99,63 @@
++    pub async fn get<T: DeserializeOwned>(&self, url: Url) -> Result<Option<T>, HttpError> {
++        self.get_unless(url, None).await
++    }
++
++    pub async fn get_all<T: DeserializeOwned>(
++        &self,
++        url: Url,
++    ) -> Result<Option<Vec<T>>, HttpError> {
++        self.get_all_unless(url, None).await
++    }
++
++    pub async fn get_unless<T: DeserializeOwned>(
++        &self,
++        url: Url,
++        not_found: Option<&str>,
++    ) -> Result<Option<T>, HttpError> {
++        match self.send(url, not_found).await? {
++            Some(response) => Ok(Some(response.json().await?)),
++            None => Ok(None),
++        }
++    }
++
++    pub async fn get_all_unless<T: DeserializeOwned>(
++        &self,
++        url: Url,
++        not_found: Option<&str>,
++    ) -> Result<Option<Vec<T>>, HttpError> {
++        let Some(mut response) = self.send(url, not_found).await? else {
++            return Ok(None);
++        };
++        let mut items = Vec::new();
++        loop {
++            let next = next_link(response.headers())?;
++            items.extend(response.json::<Vec<T>>().await?);
++            let Some(next) = next else {
++                return Ok(Some(items));
++            };
++            response = self.client.get(next).send().await?.error_for_status()?;
++        }
++    }
++
++    async fn send(
++        &self,
++        url: Url,
++        not_found: Option<&str>,
++    ) -> Result<Option<reqwest::Response>, HttpError> {
++        let response = self.client.get(url.clone()).send().await?;
++        if response.status() != StatusCode::NOT_FOUND {
++            return Ok(Some(response.error_for_status()?));
++        }
++        let Some(expected) = not_found else {
++            return Ok(None);
++        };
++        let message = response
++            .json::<NotFoundBody>()
++            .await
++            .ok()
++            .map(|body| body.message);
++        match message {
++            Some(message) if message == expected => Ok(None),
++            message => Err(HttpError::NotFound { url, message }),
++        }
++    }

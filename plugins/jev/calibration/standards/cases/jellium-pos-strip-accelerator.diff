@@ -1,0 +1,18 @@
+diff --git a/src/jfn_cef/src/client.rs b/src/jfn_cef/src/client.rs
+--- a/src/jfn_cef/src/client.rs
++++ b/src/jfn_cef/src/client.rs
+@@ -0,0 +252,14 @@
++const STRIP_ACCEL_KEEP: u8 = b'&';
++
++fn strip_accelerator(s: &str) -> String {
++    let mut out = String::with_capacity(s.len());
++    for b in s.bytes() {
++        if b != STRIP_ACCEL_KEEP {
++            out.push(b as char);
++        }
++    }
++    if s.is_ascii() {
++        return out;
++    }
++    s.chars().filter(|c| *c != '&').collect()
++}

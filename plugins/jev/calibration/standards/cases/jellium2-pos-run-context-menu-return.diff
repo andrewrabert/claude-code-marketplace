@@ -1,0 +1,66 @@
+diff --git a/src/jfn_cef/src/client_impl/context_menu.rs b/src/jfn_cef/src/client_impl/context_menu.rs
+--- a/src/jfn_cef/src/client_impl/context_menu.rs
++++ b/src/jfn_cef/src/client_impl/context_menu.rs
+@@ -0,0 +58,62 @@
++        fn run_context_menu(
++            &self,
++            browser: Option<&mut Browser>,
++            _frame: Option<&mut Frame>,
++            params: Option<&mut ContextMenuParams>,
++            model: Option<&mut MenuModel>,
++            callback: Option<&mut RunContextMenuCallback>,
++        ) -> c_int {
++            let (Some(_browser), Some(params), Some(model), Some(callback)) =
++                (browser, params, model, callback)
++            else {
++                return 0;
++            };
++            if model.count() == 0 {
++                callback.cancel();
++                return 1;
++            }
++            let MenuDelivery::Host(host) =
++                self.inner.surface().platform().menu_delivery(MenuKind::ContextMenu)
++            else {
++                callback.cancel();
++                return 1;
++            };
++            let Some(session) = self.inner.menu_open() else {
++                callback.cancel();
++                return 1;
++            };
++            let guard = CefMenuGuard::new(Arc::clone(&self.inner), session, callback.clone());
++
++            let mut items = Vec::with_capacity(model.count());
++            for i in 0..model.count() {
++                let t: sys::cef_menu_item_type_t = model.type_at(i).into();
++                if t == sys::cef_menu_item_type_t::MENUITEMTYPE_SEPARATOR {
++                    continue;
++                }
++                let raw_label = userfree_to_string(&model.label_at(i));
++                items.push(MenuItem {
++                    label: strip_accelerator(&raw_label),
++                    enabled: model.is_enabled_at(i) != 0,
++                    action: Action::Cef(model.command_id_at(i)),
++                });
++            }
++            let Some(app) = self.inner.application_menu() else {
++                return 1;
++            };
++            items.extend(app.items);
++            let menu = ContextMenu::new(items, Some(guard), app.dispatch);
++            let host_items = menu.host_items();
++
++            host.open(MenuRequest {
++                items: host_items,
++                x: params.xcoord(),
++                // The anchor is in the web overlay's own view space; the app menu
++                // is placed in window space, so the strip the overlay was sized
++                // below is added back.
++                y: params.ycoord() + self.inner.view_top(),
++                width: 0,
++                initial: MENU_DISMISSED,
++                on_selected: MenuSelection::new(move |index| menu.pick(index)),
++            });
++            1
++        }

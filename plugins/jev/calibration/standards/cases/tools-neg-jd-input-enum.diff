@@ -1,0 +1,26 @@
+diff --git a/src/tools/jdownloader_remote/cli.rs b/src/tools/jdownloader_remote/cli.rs
+--- a/src/tools/jdownloader_remote/cli.rs
++++ b/src/tools/jdownloader_remote/cli.rs
+@@ -0,0 +77,22 @@
++/// URL schemes that `add` accepts.
++pub const SCHEMES: [&str; 3] = ["ftp", "http", "https"];
++
++#[derive(Clone)]
++pub enum Input {
++    Container(PathBuf),
++    Url(Url),
++}
++
++fn parse_input(value: &str) -> Result<Input, String> {
++    let path = PathBuf::from(value);
++    if path.is_file() {
++        return Ok(Input::Container(path));
++    }
++    match Url::parse(value) {
++        Ok(url) if SCHEMES.contains(&url.scheme()) => Ok(Input::Url(url)),
++        _ => Err(format!(
++            "not an existing file or {} URL",
++            SCHEMES.join(", ")
++        )),
++    }
++}

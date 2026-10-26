@@ -1,0 +1,63 @@
+diff --git a/src/platform_abi/src/menu.rs b/src/platform_abi/src/menu.rs
+--- a/src/platform_abi/src/menu.rs
++++ b/src/platform_abi/src/menu.rs
+@@ -0,0 +11,59 @@
++/// Resolves exactly once: through [`MenuSelection::resolve`], or with
++/// [`MENU_DISMISSED`] when dropped first.
++pub struct MenuSelection {
++    resolve: Option<Box<dyn FnOnce(c_int) + Send>>,
++}
++
++impl MenuSelection {
++    pub fn new(f: impl FnOnce(c_int) + Send + 'static) -> MenuSelection {
++        MenuSelection {
++            resolve: Some(Box::new(f)),
++        }
++    }
++
++    /// Runs on the calling thread; never call it while holding a lock the
++    /// callback can reach.
++    pub fn resolve(mut self, id: c_int) {
++        if let Some(f) = self.resolve.take() {
++            f(id);
++        }
++    }
++}
++
++impl Drop for MenuSelection {
++    fn drop(&mut self) {
++        if let Some(f) = self.resolve.take() {
++            f(MENU_DISMISSED);
++        }
++    }
++}
++
++#[derive(Clone)]
++pub struct MenuItem {
++    pub id: c_int,
++    pub label: String,
++    pub enabled: bool,
++}
++
++pub fn menu_has_selectable(groups: &[Vec<MenuItem>]) -> bool {
++    groups.iter().flatten().any(|i| i.enabled)
++}
++
++pub fn menu_initial_row(groups: &[Vec<MenuItem>], initial: c_int) -> c_int {
++    usize::try_from(initial)
++        .ok()
++        .and_then(|i| groups.iter().flatten().nth(i))
++        .filter(|i| i.enabled)
++        .map_or(MENU_DISMISSED, |_| initial)
++}
++
++pub struct MenuRequest {
++    pub groups: Vec<Vec<MenuItem>>,
++    /// Anchor in logical (view) coordinates.
++    pub x: c_int,
++    pub y: c_int,
++    /// Desired logical width; `<= 0` is content-sized.
++    pub width: c_int,
++    /// Row highlighted at open; `-1` for none.
++    pub initial: c_int,
++    pub on_selected: MenuSelection,

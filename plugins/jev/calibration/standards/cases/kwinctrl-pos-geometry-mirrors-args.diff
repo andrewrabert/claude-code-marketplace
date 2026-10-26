@@ -1,0 +1,59 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -0,0 +95,55 @@
++enum WindowFilter {
++    Class(String),
++    Regex(String),
++    Title(String),
++    Focused,
++}
++
++struct Geometry {
++    scale_factor: Option<f64>,
++    max_aspect: Option<f64>,
++    width: Option<String>,
++    height: Option<String>,
++    min_width: Option<String>,
++    max_width: Option<String>,
++    min_height: Option<String>,
++    max_height: Option<String>,
++}
++
++impl Geometry {
++    fn needs_resize(&self) -> bool {
++        self.width.is_some()
++            || self.height.is_some()
++            || self.scale_factor.is_some()
++            || self.min_width.is_some()
++            || self.max_width.is_some()
++            || self.min_height.is_some()
++            || self.max_height.is_some()
++    }
++}
++
++    let filter = if args.filter_focused {
++        WindowFilter::Focused
++    } else if let Some(class) = args.filter.filter(|s| !s.is_empty()) {
++        WindowFilter::Class(class)
++    } else if let Some(regex) = args.filter_regex.filter(|s| !s.is_empty()) {
++        WindowFilter::Regex(regex)
++    } else if let Some(title) = args.filter_alt.filter(|s| !s.is_empty()) {
++        WindowFilter::Title(title)
++    } else {
++        eprintln!(
++            "If you want that this program find a window, you need to specify a window filter — either by class (`-f`), by title (`-fa`), by regex (`-fr`), or use `--filter-focused`. More information can be seen if this script is called using the `--help` parameter."
++        );
++        std::process::exit(1);
++    };
++
++    let geometry = Geometry {
++        scale_factor: args.scale_factor,
++        max_aspect: args.max_aspect,
++        width: args.width,
++        height: args.height,
++        min_width: args.min_width,
++        max_width: args.max_width,
++        min_height: args.min_height,
++        max_height: args.max_height,
++    };

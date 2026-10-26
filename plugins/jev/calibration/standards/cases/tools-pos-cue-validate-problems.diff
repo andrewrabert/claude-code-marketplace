@@ -1,0 +1,34 @@
+diff --git a/src/tools/cue_validate.rs b/src/tools/cue_validate.rs
+--- a/src/tools/cue_validate.rs
++++ b/src/tools/cue_validate.rs
+@@ -0,0 +61,30 @@
++fn is_sheet(path: &Path) -> bool {
++    path.extension()
++        .and_then(|extension| extension.to_str())
++        .is_some_and(|extension| extension.eq_ignore_ascii_case(EXTENSION))
++}
++
++/// What is wrong with the cue sheet at `sheet`; empty when it is valid.
++fn problems(sheet: &Path) -> Result<Vec<String>> {
++    let data = fs::read(sheet).with_context(|| format!("reading {}", sheet.display()))?;
++    let Ok(text) = String::from_utf8(data) else {
++        return Ok(vec!["not UTF-8".to_owned()]);
++    };
++    let files = match cue::parse(&text) {
++        Ok(files) => files,
++        Err(error) => return Ok(vec![error.to_string()]),
++    };
++    let parent = sheet
++        .parent()
++        .with_context(|| format!("{} has no parent", sheet.display()))?;
++    let mut problems = Vec::new();
++    if files.iter().all(|file| file.tracks.is_empty()) {
++        problems.push("no tracks".to_owned());
++    }
++    for file in &files {
++        if !parent.join(&file.name).is_file() {
++            problems.push(format!("{} does not exist", file.name));
++        }
++    }
++    Ok(problems)
++}

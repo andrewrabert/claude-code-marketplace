@@ -1,0 +1,81 @@
+diff --git a/src/cue.rs b/src/cue.rs
+--- a/src/cue.rs
++++ b/src/cue.rs
+@@ -0,0 +54,77 @@
++#[derive(Serialize)]
++pub struct CueSheet {
++    files: Vec<File>,
++    tracks: Vec<Track>,
++}
++
++impl CueSheet {
++    pub fn new(data: &[u8]) -> Result<Self, CueSheetError> {
++        let text = to_utf8(data);
++        if text.as_bytes() != data {
++            return Err(CueSheetError::CharacterEncoding);
++        }
++        let mut files = Vec::new();
++        let mut tracks = Vec::new();
++        for raw in text.lines() {
++            let line = raw.trim();
++            if line.is_empty() {
++                continue;
++            }
++            let (command, arguments) = command_and_arguments(line)?;
++            match command {
++                Command::File => {
++                    let &[filename, filetype] = arguments.as_slice() else {
++                        return Err(CueSheetError::ParseFileCommand(raw.to_owned()));
++                    };
++                    if Path::new(filename).file_name() != Some(OsStr::new(filename)) {
++                        return Err(CueSheetError::Filename(raw.to_owned()));
++                    }
++                    files.push(File {
++                        filename: filename.to_owned(),
++                        filetype: Filetype::from(filetype),
++                    });
++                }
++                Command::Track => {
++                    let &[number, datatype] = arguments.as_slice() else {
++                        return Err(CueSheetError::ParseTrackCommand(raw.to_owned()));
++                    };
++                    tracks.push(Track {
++                        number: number.to_owned(),
++                        datatype: Datatype::from(datatype),
++                    });
++                }
++                Command::Catalog
++                | Command::Cdtextfile
++                | Command::Flags
++                | Command::Index
++                | Command::Isrc
++                | Command::Performer
++                | Command::Postgap
++                | Command::Pregap
++                | Command::Rem
++                | Command::Songwriter
++                | Command::Title => {}
++            }
++        }
++        if tracks.is_empty() {
++            return Err(CueSheetError::NoTracks);
++        }
++        Ok(Self { files, tracks })
++    }
++
++    pub fn files(&self) -> &[File] {
++        &self.files
++    }
++
++    pub fn tracks(&self) -> &[Track] {
++        &self.tracks
++    }
++}
++
++fn command_and_arguments(line: &str) -> Result<(Command, Vec<&str>), CueSheetError> {
++    let (command, arguments): (&str, Vec<&str>) =
++        (word, repeat(0.., preceded(whitespace, argument)))
++            .parse(line)
++            .map_err(|_: ParseError<&str, EmptyError>| CueSheetError::UnmatchedQuote)?;
++    Ok((Command::try_from(command)?, arguments))
++}

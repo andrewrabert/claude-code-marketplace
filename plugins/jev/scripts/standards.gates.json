@@ -1,0 +1,9 @@
+{
+  "threshold": 0.75,
+  "gate": 0.5,
+  "gates": {
+    "silent-failure": ["absence-expected"],
+    "propagation-stops-early": ["absence-expected"],
+    "non-idiomatic-error": ["panic-only", "infallible-panic"]
+  }
+}

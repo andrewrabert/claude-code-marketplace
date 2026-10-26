@@ -1,0 +1,35 @@
+diff --git a/src/gitlab.rs b/src/gitlab.rs
+--- a/src/gitlab.rs
++++ b/src/gitlab.rs
+@@ -0,0 +44,31 @@
++impl Project {
++    fn is_under(&self, namespace: &RemotePath) -> bool {
++        let path = self.path_with_namespace.as_str().to_lowercase();
++        let prefix = format!("{}/", namespace.as_str().to_lowercase());
++        path.starts_with(&prefix)
++    }
++
++    fn admitted_by(&self, filter: Filter) -> bool {
++        filter.admits(self.archived, self.forked_from_project.is_some())
++    }
++}
++
++async fn top_level_groups(http: &Http, base: &BaseUrl) -> Result<BTreeSet<RemotePath>, Error> {
++    let url = paged(
++        base.endpoint(["api", "v4", "groups"]),
++        &[("all_available", "true")],
++    );
++    let groups = http
++        .get_all::<Group>(url.clone())
++        .await?
++        .ok_or(Error::Missing(url))?;
++    groups
++        .iter()
++        .filter_map(|group| group.full_path.split('/').next())
++        .map(|top| {
++            top.to_lowercase()
++                .parse::<RemotePath>()
++                .map_err(Error::from)
++        })
++        .collect()
++}

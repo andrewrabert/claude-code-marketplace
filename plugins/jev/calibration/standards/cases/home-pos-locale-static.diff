@@ -1,0 +1,63 @@
+diff --git a/src/platform_abi/src/lang.rs b/src/platform_abi/src/lang.rs
+--- a/src/platform_abi/src/lang.rs
++++ b/src/platform_abi/src/lang.rs
+@@ -0,0 +42,59 @@
++/// The negotiated languages' bundles; clones share them.
++#[derive(Clone)]
++pub struct Locale(Arc<FluentLanguageLoader>);
++
++impl Locale {
++    pub fn negotiate(requested: &[LanguageIdentifier]) -> Result<Locale, I18nEmbedError> {
++        let loader = fluent_language_loader!();
++        i18n_embed::select(&loader, &Localizations, requested)?;
++        Ok(Locale(Arc::new(loader)))
++    }
++
++    pub fn label(&self, label: MenuLabel) -> String {
++        let loader: &FluentLanguageLoader = &self.0;
++        match label {
++            MenuLabel::Back => fl!(loader, "menu-back"),
++            MenuLabel::Forward => fl!(loader, "menu-forward"),
++            MenuLabel::Reload => fl!(loader, "menu-reload"),
++            MenuLabel::Undo => fl!(loader, "menu-undo"),
++            MenuLabel::Redo => fl!(loader, "menu-redo"),
++            MenuLabel::Cut => fl!(loader, "menu-cut"),
++            MenuLabel::Copy => fl!(loader, "menu-copy"),
++            MenuLabel::Paste => fl!(loader, "menu-paste"),
++            MenuLabel::SelectAll => fl!(loader, "menu-select-all"),
++        }
++    }
++
++    pub fn connect_label(&self, label: ConnectLabel) -> String {
++        let loader: &FluentLanguageLoader = &self.0;
++        match label {
++            ConnectLabel::ServerHost => fl!(loader, "connect-server-host"),
++            ConnectLabel::ServerHostHelp => fl!(loader, "connect-server-host-help"),
++            ConnectLabel::Submit => fl!(loader, "connect-submit"),
++            ConnectLabel::Failure => fl!(loader, "connect-failure"),
++            ConnectLabel::UnableToConnect => fl!(loader, "connect-unable"),
++            ConnectLabel::GotIt => fl!(loader, "connect-got-it"),
++        }
++    }
++}
++
++static LOCALE: OnceLock<Locale> = OnceLock::new();
++
++/// Negotiates the system's requested languages. Call once at startup. A
++/// failed load leaves no bundles, so every label renders as its message id.
++pub fn localize() {
++    let requested = DesktopLanguageRequester::requested_languages();
++    let locale = Locale::negotiate(&requested).unwrap_or_else(|error| {
++        tracing::error!(%error, ?requested, "loading translations failed");
++        Locale(Arc::new(fluent_language_loader!()))
++    });
++    drop(LOCALE.set(locale));
++}
++
++/// The languages [`localize`] picked; no bundles before it runs.
++pub fn locale() -> Locale {
++    LOCALE
++        .get()
++        .cloned()
++        .unwrap_or_else(|| Locale(Arc::new(fluent_language_loader!())))
++}

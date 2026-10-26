@@ -1,0 +1,39 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -0,0 +95,35 @@
++/// Which windows the KWin script selects
++enum WindowFilter<'a> {
++    /// Window class (exact match)
++    Class(&'a str),
++    /// Window class (regex match)
++    Regex(&'a str),
++    /// Window title (case-insensitive regex match)
++    Title(&'a str),
++    /// The currently focused window
++    Focused,
++}
++
++/// Size options applied to the selected window
++struct Geometry<'a> {
++    scale_factor: Option<f64>,
++    max_aspect: Option<f64>,
++    width: Option<&'a str>,
++    height: Option<&'a str>,
++    min_width: Option<&'a str>,
++    max_width: Option<&'a str>,
++    min_height: Option<&'a str>,
++    max_height: Option<&'a str>,
++}
++
++impl Geometry<'_> {
++    fn needs_resize(&self) -> bool {
++        self.width.is_some()
++            || self.height.is_some()
++            || self.scale_factor.is_some()
++            || self.min_width.is_some()
++            || self.max_width.is_some()
++            || self.min_height.is_some()
++            || self.max_height.is_some()
++    }
++}

@@ -1,0 +1,41 @@
+diff --git a/src/urls.rs b/src/urls.rs
+--- a/src/urls.rs
++++ b/src/urls.rs
+@@ -0,0 +1,37 @@
++use linkify::{LinkFinder, LinkKind};
++
++pub const FTP: &str = "ftp";
++pub const HTTP: &str = "http";
++pub const HTTPS: &str = "https";
++
++/// Matches URLs with one of a fixed set of schemes.
++pub struct UrlPattern {
++    finder: LinkFinder,
++    schemes: Vec<String>,
++}
++
++impl UrlPattern {
++    pub fn new<S: AsRef<str>>(schemes: &[S]) -> Self {
++        let mut finder = LinkFinder::new();
++        finder.kinds(&[LinkKind::Url]);
++        let schemes = schemes
++            .iter()
++            .map(|scheme| scheme.as_ref().to_owned())
++            .collect();
++        Self { finder, schemes }
++    }
++
++    /// URLs found in `text`, in order of appearance, duplicates included.
++    pub fn urls<'t>(&self, text: &'t str) -> impl Iterator<Item = &'t str> {
++        self.finder
++            .links(text)
++            .map(|link| link.as_str())
++            .filter(|url| {
++                url.split_once("://").is_some_and(|(scheme, _)| {
++                    self.schemes
++                        .iter()
++                        .any(|allowed| allowed.eq_ignore_ascii_case(scheme))
++                })
++            })
++    }
++}

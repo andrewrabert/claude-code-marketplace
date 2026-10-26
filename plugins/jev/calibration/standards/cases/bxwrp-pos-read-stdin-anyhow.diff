@@ -1,0 +1,22 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -0,0 +155,18 @@
++/// The only read of host stdin, to EOF. A terminal or a socket is closed: a
++/// spawner can hold a socket open without ever writing to it.
++fn read_stdin() -> anyhow::Result<ScriptInput> {
++    use std::os::fd::AsFd;
++    use std::os::unix::fs::FileTypeExt;
++
++    let stdin = std::io::stdin();
++    if stdin.is_terminal() {
++        return Ok(ScriptInput::Closed);
++    }
++    let metadata = std::fs::File::from(stdin.as_fd().try_clone_to_owned()?).metadata()?;
++    if metadata.file_type().is_socket() {
++        return Ok(ScriptInput::Closed);
++    }
++    let mut bytes = Vec::new();
++    stdin.lock().read_to_end(&mut bytes)?;
++    Ok(ScriptInput::Bytes(bytes))
++}

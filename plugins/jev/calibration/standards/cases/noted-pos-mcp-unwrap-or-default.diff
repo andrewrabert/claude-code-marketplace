@@ -1,0 +1,39 @@
+diff --git a/crates/server/src/mcp.rs b/crates/server/src/mcp.rs
+--- a/crates/server/src/mcp.rs
++++ b/crates/server/src/mcp.rs
+@@ -0,0 +190,35 @@
++    #[tool(name = "GetLog", title = "Get log entries", description = D_GET_LOG)]
++    async fn get_log(
++        &self,
++        Parameters(args): Parameters<GetLogArgs>,
++        context: RequestContext<RoleServer>,
++    ) -> CallToolResult {
++        match async { self.confined(&context)?.get_log(args).await }.await {
++            Ok(entries) => tool_ok(serde_json::to_string_pretty(&entries).unwrap_or_default()),
++            Err(e) => tool_error(format!("error: {}", e.message())),
++        }
++    }
++
++    #[tool(name = "CreateTask", title = "Create task", description = D_CREATE_TASK)]
++    async fn create_task(
++        &self,
++        Parameters(args): Parameters<CreateTaskArgs>,
++        context: RequestContext<RoleServer>,
++    ) -> CallToolResult {
++        match async { self.confined(&context)?.create_task(args).await }.await {
++            Ok(task) => tool_ok(serde_json::to_string_pretty(&task).unwrap_or_default()),
++            Err(e) => tool_error(format!("error: {}", e.message())),
++        }
++    }
++
++    #[tool(name = "GetTasks", title = "Get tasks", description = D_GET_TASKS)]
++    async fn get_tasks(
++        &self,
++        Parameters(args): Parameters<GetTasksArgs>,
++        context: RequestContext<RoleServer>,
++    ) -> CallToolResult {
++        match async { self.confined(&context)?.get_tasks(args).await }.await {
++            Ok(tasks) => tool_ok(serde_json::to_string_pretty(&tasks).unwrap_or_default()),
++            Err(e) => tool_error(format!("error: {}", e.message())),
++        }
++    }

@@ -1,0 +1,11 @@
+diff --git a/src/acl.rs b/src/acl.rs
+--- a/src/acl.rs
++++ b/src/acl.rs
+@@ -0,0 +1,7 @@
++pub fn grant(user: u64, resource: u64, admin: bool) -> Result<()> {
++    let mut grants: HashMap<u64, Vec<u64>> = load_grants()?;
++    if admin {
++        grants.entry(user).or_default().push(resource);
++    }
++    store_grants(&grants)
++}
