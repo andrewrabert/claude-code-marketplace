@@ -5,12 +5,11 @@
 #   "pydantic>=2,<3",
 # ]
 # ///
-"""Score the standards question sets (scripts/standards.yaml and calibration/history) and scripts/jev_review.py against the labelled cases in this directory."""
+"""Score the standards question sets (scripts/standards.yaml and calibration/history) against the labelled cases in this directory."""
 
 import argparse
 import asyncio
 import json
-import os
 import pathlib
 import sys
 
@@ -25,14 +24,6 @@ STANDARDS_V3 = HISTORY / "standards-v3.yaml"
 STANDARDS_V4 = HISTORY / "standards-v4.yaml"
 STANDARDS_V5 = SCRIPTS / "standards.yaml"
 STANDARDS_V6 = HISTORY / "standards-v6.yaml"
-# The legacy diff reviewer, kept in the dotfiles.
-JEV_REVIEW = (
-    pathlib.Path(
-        os.environ.get("DOTFILES_PRIVATE", "~/.dotfiles/private")
-    ).expanduser()
-    / "scripts"
-    / "jev-review"
-)
 
 STANDARDS_CATEGORY = {
     "needless-layer": "needless_layer",
@@ -66,16 +57,6 @@ STANDARDS_CATEGORY = {
 GATES_FILE = json.loads((SCRIPTS / "standards.gates.json").read_text())
 GATES = {rule: tuple(names) for rule, names in GATES_FILE["gates"].items()}
 GATE = GATES_FILE["gate"]
-
-# jev_review.py prints each rule by its standard text, not its name.
-REVIEW_CATEGORY = {
-    "correct by construction: enforce the check inside the operation": "forgettable",
-    "correct by construction: a check after construction means it wasn't constructed": "post_construction",
-    "correct by construction: decide the kind once at parse": "classification",
-    "error propagation: a failure returned as a value is silent": "silent",
-    "error propagation: errors propagate idiomatically": "silent",
-    "error propagation: propagate to the upper-most edge that should know": "propagation",
-}
 
 
 class UserError(Exception):
@@ -124,34 +105,14 @@ async def ask(question_set, state, name):
     ):
         return {}
     code, stdout, stderr = await run(
-        "jev",
-        "ask",
-        "-p",
-        "typesafe",
+        str(SCRIPTS / "jev-ask.py"),
         "-q",
         str(question_set),
         stdin=state.encode(),
     )
     if code != 0:
-        raise UserError(f"jev ask {name}: {stderr.strip()}")
+        raise UserError(f"jev-ask.py {name}: {stderr.strip()}")
     return Answers.model_validate_json(stdout).root
-
-
-async def review(case):
-    # jev_review.py exits 1 when it finds a violation.
-    code, stdout, stderr = await run(
-        str(JEV_REVIEW), "--all", stdin=case.read_bytes()
-    )
-    if code not in (0, 1):
-        raise UserError(f"jev-review {case.name}: {stderr.strip()}")
-    verdicts = {}
-    lines = stdout.splitlines()
-    for verdict_line, standard_line in zip(lines[0::3], lines[1::3]):
-        verdict = verdict_line.split()[0]
-        category = REVIEW_CATEGORY[standard_line.strip()]
-        if verdict == "VIOLATION" or verdicts.get(category) != "VIOLATION":
-            verdicts[category] = verdict
-    return verdicts
 
 
 def flagged_v1(probs, threshold):
@@ -224,7 +185,7 @@ async def main():
     parser.add_argument(
         "--variants",
         nargs="+",
-        choices=["v1", "v2", "v3", "v4", "v5", "v6", "jev_review"],
+        choices=["v1", "v2", "v3", "v4", "v5", "v6"],
         default=["v5", "v6"],
     )
     args = parser.parse_args()
@@ -254,20 +215,14 @@ async def main():
                     ask(path, strip_tests(c.read_text()), c.stem)
                     for c in cases
                 )
-            case "jev_review":
-                calls = (review(c) for c in cases)
-        return dict(zip(names, await asyncio.gather(*calls)))
+        # One call at a time: each is a separate process.
+        return dict(zip(names, [await call for call in calls]))
 
     if args.saved:
         saved = json.loads(args.saved.read_text())
         results = {v: saved[v] for v in args.variants if v in saved}
     else:
-        results = dict(
-            zip(
-                args.variants,
-                await asyncio.gather(*(answers_for(v) for v in args.variants)),
-            )
-        )
+        results = {v: await answers_for(v) for v in args.variants}
     if args.out:
         args.out.write_text(json_dumps(results))
 
@@ -295,16 +250,6 @@ async def main():
                         labels,
                         args.verbose,
                     )
-            case "jev_review":
-                report(
-                    "jev_review.py VIOLATION",
-                    {
-                        c: {k for k, v in found.items() if v == "VIOLATION"}
-                        for c, found in answers.items()
-                    },
-                    labels,
-                    args.verbose,
-                )
 
 
 if __name__ == "__main__":

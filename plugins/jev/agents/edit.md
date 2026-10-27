@@ -1,7 +1,7 @@
 ---
 name: edit
-description: File edit agent whose every write is reviewed by jev against my standards. Edits files only. Use for a change you want checked as it is written; pass the full edit instructions in the prompt.
-tools: LSP, mcp__bxwrp
+description: File edit agent whose every write is reviewed by jev against my standards. Edits files only. Use for a change you want checked as it is written; The prompt's first line must be exactly {"scope": ["<absolute path of a directory>", ...]}, the directories its bash and file tools mount read-write; the full edit instructions follow it. Any other prompt is refused before the agent starts.
+tools: LSP, mcp__jev__bash, mcp__jev__read, mcp__jev__write, mcp__jev__edit
 omitClaudeMd: true
 ---
 

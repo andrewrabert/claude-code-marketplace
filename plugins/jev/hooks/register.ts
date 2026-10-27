@@ -1,4 +1,4 @@
-import type { ProcessRunInit, ProcessRunResult, Register } from 'claude-code'
+import type { ProcessRunInit, ProcessRunResult, Register, ToolSpec } from 'claude-code'
 
 const AGENT_TYPE = 'jev:edit'
 
@@ -6,13 +6,92 @@ const SCAN_TOOL = 'scan'
 
 const AUDIT_AGENT_TYPE = 'jev:audit'
 
-// A jev:audit agent's prompt, which is exactly the arguments its one scan runs with.
+// The sandbox tools: each call runs scripts/jev-bash.py once, in the calling
+// jev agent's scope.
+const SANDBOX_TOOLS: readonly ToolSpec[] = [
+  {
+    name: 'bash',
+    description:
+      'Run a shell command. Standard output and standard error are returned together, followed by ' +
+      'the exit code when it is nonzero. Each call starts a new shell: the working directory and ' +
+      'variables do not carry over. /tmp is your own and keeps its files.',
+    inputSchema: {
+      type: 'object',
+      properties: { command: { type: 'string' }, description: { type: 'string' } },
+      required: ['command', 'description'],
+    },
+  },
+  {
+    name: 'read',
+    description:
+      'Read a text file with numbered lines. The path must be absolute. Use offset and limit to ' +
+      'select a range of lines.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string' },
+        limit: { type: ['integer', 'null'], minimum: 0 },
+        offset: { type: ['integer', 'null'], minimum: 0 },
+      },
+      required: ['file_path'],
+    },
+  },
+  {
+    name: 'write',
+    description:
+      'Write a text file. The path must be absolute, and missing parent directories are created ' +
+      'automatically.',
+    inputSchema: {
+      type: 'object',
+      properties: { content: { type: 'string' }, file_path: { type: 'string' } },
+      required: ['file_path', 'content'],
+    },
+  },
+  {
+    name: 'edit',
+    description:
+      'Replace exact text in a file. By default the old text must occur exactly once; set ' +
+      'replace_all to replace every occurrence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string' },
+        new_string: { type: 'string' },
+        old_string: { type: 'string' },
+        replace_all: { default: false, type: 'boolean' },
+      },
+      required: ['file_path', 'old_string', 'new_string'],
+    },
+  },
+]
+
+// The keys of a tool.call input that are not the tool's arguments.
+const ENVELOPE_KEYS: ReadonlySet<string> = new Set(['tool', 'tool_use_id', 'agentId', 'requestMeta'])
+
+// The arguments a jev:audit agent's one scan runs with, from its prompt.
 type ScanRequest = { path: string; base?: string }
 
-const SCAN_REQUEST_FORMAT = '{"path": "<absolute path of a .rs file or directory>", "base": "<git revision>"}, base optional'
+// The directories a jev agent's bash and file tools mount read-write, named by its spawner.
+type Scope = readonly string[]
+
+const SCOPE_FORMAT = '"scope": [<absolute path of a directory>, ...]'
+
+// Each jev agent type's prompt format, for the refusal of any other prompt.
+const PROMPT_FORMATS: Readonly<Record<string, string>> = {
+  [AUDIT_AGENT_TYPE]:
+    `exactly {"path": "<absolute path of a file or directory>", "base": "<git revision>", ${SCOPE_FORMAT}}, base optional`,
+  [AGENT_TYPE]: `a first line of exactly {${SCOPE_FORMAT}}, then the edit instructions`,
+}
+
+// A jev agent's sandbox: the scope its spawner named, and its own temp
+// directory, mounted at /tmp.
+type Sandbox = { scope: Scope; tmp: string }
+
+// A spawn's parsed prompt: the scope, and the prompt the agent runs with.
+type SpawnPrompt = { scope: Scope; prompt: string; request?: ScanRequest }
 
 // A question set's decision logic, read from the `.gates.json` beside it and
-// shared with scripts/jev-scan and the calibration in calibration/standards.
+// shared with scripts/jev-scan.py and the calibration in calibration/standards.
 type Gates = {
   // A noul answer at or above this flags the question.
   threshold: number
@@ -27,26 +106,21 @@ type Gates = {
 const DEFAULT_GATES: Gates = { threshold: 0.75, gate: 0.5, gates: {} }
 
 type QuestionSet = {
-  // Matched against the path's basename.
+  // Matched against the path's basename; the first entry that matches applies.
   globs: readonly string[]
-  // Relative to the plugin's scripts/.
-  set: string
+  // Relative to the plugin's scripts/; the change is reviewed against each, one at a time.
+  sets: readonly string[]
   // A line marking where test code starts; it and everything after it is left out of the review.
   testModule?: string
 }
 
+// text.yaml, the rules for comments, error text and prose, applies to every file.
 const QUESTION_SETS: readonly QuestionSet[] = [
-  { globs: ['*.rs'], set: 'standards.yaml', testModule: '#[cfg(test)]' },
-  { globs: ['*.md'], set: 'prose.yaml' },
+  { globs: ['*.rs'], sets: ['standards.yaml', 'text.yaml'], testModule: '#[cfg(test)]' },
+  { globs: ['*'], sets: ['text.yaml'] },
 ]
 
-const WRITE_TOOLS: ReadonlySet<string> = new Set(
-  ['Edit', 'Write'].concat(
-    ['mcp__bxwrp__', 'mcp__ro-bxwrp__'].flatMap(prefix =>
-      ['edit', 'write'].map(tool => prefix + tool),
-    ),
-  ),
-)
+const WRITE_TOOLS: ReadonlySet<string> = new Set(['Edit', 'Write', 'mcp__jev__edit', 'mcp__jev__write'])
 
 const globToRegExp = (glob: string): RegExp =>
   new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`)
@@ -116,13 +190,22 @@ const dirname = (path: string): string => path.slice(0, path.lastIndexOf('/')) |
 // Each jev:audit agent's scan arguments, from its prompt at spawn.
 const scanRequests = new Map<string, ScanRequest>()
 
-// A scan request, or why `prompt` is not one.
-const parseScanRequest = (prompt: string): ScanRequest | string => {
+// A scope, or why `value` is not one.
+const parseScope = (value: unknown): Scope | string =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.every(root => typeof root === 'string' && root.startsWith('/'))
+    ? value
+    : 'scope is not a non-empty array of absolute paths'
+
+// A jev:audit prompt, or why `prompt` is not one. The agent runs with the scan
+// request alone.
+const parseAuditPrompt = (prompt: string): SpawnPrompt | string => {
   const parsed = parseJson(prompt.trim())
   if (!isRecord(parsed)) {
     return 'the prompt is not a JSON object'
   }
-  const { path, base, ...rest } = parsed
+  const { path, base, scope, ...rest } = parsed
   const extra = Object.keys(rest)
   if (extra.length > 0) {
     return `unknown keys ${extra.join(', ')}`
@@ -130,14 +213,49 @@ const parseScanRequest = (prompt: string): ScanRequest | string => {
   if (typeof path !== 'string' || !path.startsWith('/')) {
     return 'path is not an absolute path'
   }
-  if (base === undefined) {
-    return { path }
-  }
-  if (typeof base !== 'string' || base === '' || base.startsWith('-')) {
+  if (base !== undefined && (typeof base !== 'string' || base === '' || base.startsWith('-'))) {
     return 'base is not a git revision'
   }
-  return { path, base }
+  const roots = parseScope(scope)
+  if (typeof roots === 'string') {
+    return roots
+  }
+  const request: ScanRequest = base === undefined ? { path } : { path, base }
+  return { scope: roots, prompt: JSON.stringify(request), request }
 }
+
+// A jev:edit prompt, or why `prompt` is not one. The agent runs with the
+// instructions after the scope line.
+const parseEditPrompt = (prompt: string): SpawnPrompt | string => {
+  const newline = prompt.indexOf('\n')
+  const parsed = parseJson(newline === -1 ? prompt : prompt.slice(0, newline))
+  if (!isRecord(parsed)) {
+    return 'the first line is not a JSON object'
+  }
+  const { scope, ...rest } = parsed
+  const extra = Object.keys(rest)
+  if (extra.length > 0) {
+    return `unknown keys ${extra.join(', ')}`
+  }
+  const roots = parseScope(scope)
+  if (typeof roots === 'string') {
+    return roots
+  }
+  const instructions = newline === -1 ? '' : prompt.slice(newline + 1).trim()
+  if (instructions === '') {
+    return 'the edit instructions are missing'
+  }
+  return { scope: roots, prompt: instructions }
+}
+
+const SPAWN_PARSERS: Readonly<Record<string, (prompt: string) => SpawnPrompt | string>> = {
+  [AUDIT_AGENT_TYPE]: parseAuditPrompt,
+  [AGENT_TYPE]: parseEditPrompt,
+}
+
+// Each jev agent's sandbox, made at its spawn; its temp directory is removed
+// when the session ends.
+const sandboxes = new Map<string, Sandbox>()
 
 // The agentIds that have run their one scan; '' is the main loop, whose scan
 // is per turn.
@@ -166,8 +284,8 @@ const asText = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined
 
 // What a question asks, what a violation looks like and what it accepts, from one question of
-// `jev ask --dry-run`'s canonical payload. `instructions` is a string, or an
-// object holding `statement` (jev-lint form) or `question` (jevkit form).
+// `jev-ask.py --dry-run`'s canonical payload. `instructions` is a string, or an
+// object holding `statement` or `question`.
 const describe = (question: unknown): string => {
   if (!isRecord(question)) {
     return ''
@@ -192,7 +310,7 @@ const describeSet = async (
   run: Run,
   setPath: string,
 ): Promise<Readonly<Record<string, string>> | undefined> => {
-  const dry = await run(['jev', 'ask', '-p', 'typesafe', '--dry-run', '-q', setPath], {
+  const dry = await run([`${dirname(setPath)}/jev-ask.py`, '--dry-run', '-q', setPath], {
     stdin: 'x',
   })
   const payload = parseJson(dry.stdout)
@@ -261,47 +379,60 @@ export const register: Register = on => {
       return result
     }
 
-    const setPath = `${$.plugin.root}/scripts/${set.set}`
-    const ask = await $.process.run(['jev', 'ask', '-p', 'typesafe', '-q', setPath], {
-      stdin: state,
-    })
-    if (ask.exitCode !== 0) {
-      return fail(`jev ask: ${ask.stderr.trim()}`)
+    const reviews: string[] = []
+    // A question two of the sets both ask is reported once, from the first set.
+    const reported = new Set<string>()
+    for (const name of set.sets) {
+      const setPath = `${$.plugin.root}/scripts/${name}`
+      const ask = await $.process.run([`${dirname(setPath)}/jev-ask.py`, '-q', setPath], {
+        stdin: state,
+      })
+      if (ask.exitCode !== 0) {
+        return fail(`jev-ask.py: ${ask.stderr.trim()}`)
+      }
+      const answers = parseJson(ask.stdout)
+      if (!isNumberRecord(answers)) {
+        return fail(`jev-ask.py returned no noul answers: ${ask.stdout.trim()}`)
+      }
+      // Exits 3 when the question set has no gates file.
+      const gatesFile = await $.process.run([
+        'sh',
+        '-c',
+        'test -e "$1" || exit 3; cat "$1"',
+        'sh',
+        setPath.replace(/\.yaml$/, '.gates.json'),
+      ])
+      const gates = gatesFile.exitCode === 3 ? DEFAULT_GATES : parseJson(gatesFile.stdout)
+      if (gatesFile.exitCode !== 0 && gatesFile.exitCode !== 3) {
+        return fail(`reading gates for ${setPath}: ${gatesFile.stderr.trim()}`)
+      }
+      if (!isGates(gates)) {
+        return fail(`gates for ${setPath} are not { threshold, gate, gates }`)
+      }
+      const flagged = Object.entries(answers).filter(
+        ([question]) => isFinding(question, answers, gates) && !reported.has(question),
+      )
+      for (const [question] of flagged) {
+        reported.add(question)
+      }
+      if (flagged.length === 0) {
+        continue
+      }
+      const described = descriptions.get(setPath) ?? (await describeSet((argv, init) => $.process.run(argv, init), setPath))
+      if (described === undefined) {
+        return fail(`jev-ask.py --dry-run could not read the questions in ${setPath}`)
+      }
+      reviews.push(
+        [
+          `jev review of ${path} against ${name}, flagged at >= ${gates.threshold}:`,
+          ...flagged.map(([question, p]) => `- ${question} (${p.toFixed(2)}): ${described[question] ?? ''}`),
+        ].join('\n'),
+      )
     }
-    const answers = parseJson(ask.stdout)
-    if (!isNumberRecord(answers)) {
-      return fail(`jev ask returned no noul answers: ${ask.stdout.trim()}`)
-    }
-    // Exits 3 when the question set has no gates file.
-    const gatesFile = await $.process.run([
-      'sh',
-      '-c',
-      'test -e "$1" || exit 3; cat "$1"',
-      'sh',
-      setPath.replace(/\.yaml$/, '.gates.json'),
-    ])
-    const gates = gatesFile.exitCode === 3 ? DEFAULT_GATES : parseJson(gatesFile.stdout)
-    if (gatesFile.exitCode !== 0 && gatesFile.exitCode !== 3) {
-      return fail(`reading gates for ${setPath}: ${gatesFile.stderr.trim()}`)
-    }
-    if (!isGates(gates)) {
-      return fail(`gates for ${setPath} are not { threshold, gate, gates }`)
-    }
-    const flagged = Object.entries(answers).filter(([question]) =>
-      isFinding(question, answers, gates),
-    )
-    if (flagged.length === 0) {
+    if (reviews.length === 0) {
       return result
     }
-    const described = descriptions.get(setPath) ?? (await describeSet((argv, init) => $.process.run(argv, init), setPath))
-    if (described === undefined) {
-      return fail(`jev ask --dry-run could not read the questions in ${setPath}`)
-    }
-    const review = [
-      `jev review of ${path}, flagged at >= ${gates.threshold}:`,
-      ...flagged.map(([question, p]) => `- ${question} (${p.toFixed(2)}): ${described[question] ?? ''}`),
-    ].join('\n')
-    return { ...result, context: [...(result.context ?? []), review] }
+    return { ...result, context: [...(result.context ?? []), ...reviews] }
   }).catch((_, e, next) => next(e))
 
   on('session.start', async ($, e, next) => {
@@ -309,20 +440,23 @@ export const register: Register = on => {
     await $.tool.register({
       name: SCAN_TOOL,
       description:
-        "Review Rust code in a git repository with jev against the user's standards: a .rs file or a " +
-        'directory, every top-level item (fn, method, struct, enum, const), or with `base` only the hunks ' +
-        'changed since that revision. Each item costs one paid call, and an agent gets one scan: pass ' +
+        "Review code and text in a git repository with jev against the user's standards: a file or a " +
+        'directory, every top-level item (Rust fn, method, struct, enum, const; Python function, method, ' +
+        'class, assignment; any other file whole; a directory scans its .rs, .py and .md files), or with ' +
+        '`base` only the hunks of any text file changed since that revision. Every file is reviewed ' +
+        'against the comment, error-text and prose rules; Rust also against the Rust standards. Each item ' +
+        'costs one paid call per rule set, and an agent gets one scan: pass ' +
         'the narrowest path and the base the request names. Returns one JSON line per finding: file, ' +
         'start, end, item, question, probability, asks (what the rule says), violation (what a ' +
         'violation looks like) and accepted (similar code the rule allows); then {"failure": ...} ' +
         'lines for items jev could not review, and a summary line. Findings are unverified: about 1 in 7 items of accepted code gets a false one. ' +
-        'Takes about 1 call per item; a large repository can take minutes.',
+        'A large repository can take minutes.',
       inputSchema: {
         type: 'object',
         properties: {
           path: {
             type: 'string',
-            description: 'Absolute path of a .rs file, or of a directory, inside a git repository.',
+            description: 'Absolute path of a file or a directory inside a git repository.',
           },
           base: {
             type: 'string',
@@ -334,27 +468,77 @@ export const register: Register = on => {
         required: ['path'],
       },
     })
+    for (const tool of SANDBOX_TOOLS) {
+      await $.tool.register(tool)
+    }
     return started
   })
 
-  on('agent.spawn', async (_, e, next) => {
-    if (e.subagentType !== AUDIT_AGENT_TYPE) {
+  on('agent.spawn', async ($, e, next) => {
+    const parse = SPAWN_PARSERS[e.subagentType]
+    if (parse === undefined) {
       return next(e)
     }
-    const request = parseScanRequest(e.prompt)
-    if (typeof request === 'string') {
-      return { deny: `${AUDIT_AGENT_TYPE} takes a prompt of exactly ${SCAN_REQUEST_FORMAT}: ${request}.` }
+    const parsed = parse(e.prompt)
+    if (typeof parsed === 'string') {
+      return { deny: `${e.subagentType} takes a prompt of ${PROMPT_FORMATS[e.subagentType]}: ${parsed}.` }
     }
-    const spawned = await next(e)
-    if (spawned.agentId !== undefined) {
-      scanRequests.set(spawned.agentId, request)
+    const made = await $.process.run(['sh', '-c', 'mktemp -d "${TMPDIR:-/tmp}/claude-code-jev.XXXXXX"'])
+    if (made.exitCode !== 0) {
+      return { deny: `mktemp for ${e.subagentType} failed: ${made.stderr.trim()}` }
     }
+    const tmp = made.stdout.trim()
+    const spawned = await next({ ...e, prompt: parsed.prompt })
+    const agentId = spawned.agentId
+    if (agentId === undefined) {
+      await $.process.run(['rm', '-rf', '--', tmp])
+      return spawned
+    }
+    if (parsed.request !== undefined) {
+      scanRequests.set(agentId, parsed.request)
+    }
+    sandboxes.set(agentId, { scope: parsed.scope, tmp })
     return spawned
   }).catch((_, e, next) =>
-    next.called || e.subagentType !== AUDIT_AGENT_TYPE
+    next.called || SPAWN_PARSERS[e.subagentType] === undefined
       ? next(e)
-      : { deny: `${AUDIT_AGENT_TYPE} spawn check failed.` },
+      : { deny: `${e.subagentType} spawn check failed.` },
   )
+
+  for (const { name } of SANDBOX_TOOLS) {
+    on('tool.call', { tool: `mcp__jev__${name}` }, async ($, e) => {
+      const sandbox = e.agentId === undefined ? undefined : sandboxes.get(e.agentId)
+      if (sandbox === undefined) {
+        return { deny: 'only a jev agent spawned with a scope can use this tool.' }
+      }
+      const args = Object.fromEntries(Object.entries(e).filter(([key]) => !ENVELOPE_KEYS.has(key)))
+      // jev-bash.py exits 1 with the reason on stderr when the call fails.
+      const call = await $.process.run(
+        [
+          `${$.plugin.root}/scripts/jev-bash.py`,
+          ...sandbox.scope.flatMap(root => ['--root', root]),
+          '--tmp',
+          sandbox.tmp,
+          name,
+        ],
+        { stdin: JSON.stringify(args), timeoutMs: 120_000 },
+      )
+      if (call.exitCode !== 0) {
+        return { deny: call.stderr.trim() || `jev-bash.py exited with ${call.exitCode}.` }
+      }
+      return { result: call.stdout }
+    })
+  }
+
+  // A resumed agent keeps its sandbox, so temp directories last until the session ends.
+  on('session.end', async ($, e, next) => {
+    const dirs = [...sandboxes.values()].map(sandbox => sandbox.tmp)
+    sandboxes.clear()
+    if (dirs.length > 0) {
+      await $.process.run(['rm', '-rf', '--', ...dirs])
+    }
+    return next(e)
+  })
 
   on('turn.complete', (_, e, next) => {
     if (e.agentId === undefined) {
@@ -380,24 +564,24 @@ export const register: Register = on => {
     const path = request !== undefined ? request.path : 'path' in e ? e.path : undefined
     const base = request !== undefined ? request.base : 'base' in e ? e.base : undefined
     if (typeof path !== 'string' || !path.startsWith('/')) {
-      return { deny: 'path must be an absolute path of a .rs file or a directory.' }
+      return { deny: 'path must be an absolute path of a file or a directory.' }
     }
     if (base !== undefined && typeof base !== 'string') {
       return { deny: 'base must be a git revision.' }
     }
     // Claimed before the scan runs, so a second call made in parallel is refused too.
     scanned.add(scanner)
-    // jev-scan exits 2 when it reviewed some items and failed others.
+    // jev-scan.py exits 2 when it reviewed some items and failed others.
     const scan = await $.process.run(
       [
-        `${$.plugin.root}/scripts/jev-scan`,
+        `${$.plugin.root}/scripts/jev-scan.py`,
         ...(base === undefined ? [] : ['--base', base]),
         path,
       ],
       { timeoutMs: 600_000 },
     )
     if (scan.exitCode !== 0 && scan.exitCode !== 2) {
-      return { deny: `jev-scan failed: ${scan.stderr.trim()}` }
+      return { deny: `jev-scan.py failed: ${scan.stderr.trim()}` }
     }
     return { result: `${scan.stdout}${scan.stderr.trim().split('\n').at(-1) ?? ''}\n` }
   })

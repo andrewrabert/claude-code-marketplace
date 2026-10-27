@@ -40,7 +40,7 @@
     {
       "name": "jev",
       "source": "./plugins/jev",
-      "description": "Review Rust code and surface specs against my standards with jev: a reviewing edit agent, an audit agent, and a scan tool"
+      "description": "Review code, text and surface specs against my standards with jev: a reviewing edit agent, an audit agent, and a scan tool"
     }
   ]
 }

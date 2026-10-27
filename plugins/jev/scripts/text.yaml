@@ -1,0 +1,38 @@
+# Text standards for any file: comments, hand-written error text and prose rules.
+# State: one diff hunk with removed lines stripped; judges "+" lines only.
+# comment-restates-code and invented-error-context are standards.yaml's questions without "Rust";
+# negative_framing is prose.yaml's question. Not calibrated; flag at >= 0.75, the default gates.
+
+comment-restates-code:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this diff; other lines are context.
+    statement: An added comment only repeats, defends or narrates what the code beside it already shows.
+  criteria:
+    'true': >-
+      An added comment or doc comment restates what the next line does, labels it, vouches
+      that it is safe or correct, cites where the design came from, or narrates what the code
+      used to do, and deleting it would not lead a competent reader to write a wrong line.
+    'false': >-
+      Every added comment names a non-obvious fact about the code as it stands whose absence
+      would cause a specific wrong edit, or the added lines contain no comments.
+invented-error-context:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this diff; other lines are context.
+    statement: An added line describes an error with hand-written text that names a cause the error value does not state.
+  criteria:
+    'true': >-
+      Added code logs, prints, formats or wraps an error with a prefix or message such as
+      "failed to read config: {error}" that guesses which operation or cause failed, so the text becomes wrong when the function
+      gains another error case; or text that repeats what the error's own type or variant already
+      says.
+    'false': >-
+      Added code reports the error value as it is, for example "{error}" or by passing the error
+      on unchanged, or adds only context the code at that line knows for certain, such as the
+      path or id it was working on; or the added lines describe no error.
+negative_framing:
+  type: noul
+  instructions:
+    task: Judge only the lines that begin with "+" in this diff; other lines are context.
+    statement: Does the added text state a rule as something to avoid, where it could state the desired outcome instead?
