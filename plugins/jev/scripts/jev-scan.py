@@ -6,6 +6,7 @@
 #   "tree-sitter>=0.23,<0.26",
 #   "tree-sitter-python>=0.23,<0.26",
 #   "tree-sitter-rust>=0.23,<0.25",
+#   "unidiff>=0.7,<0.8",
 # ]
 # ///
 """Review code and text with jev question sets and print the findings as JSON lines: every top-level item of the Rust, Python and Markdown files in a git repository, the hunks of any text file changed since a revision, or each declaration a Rust surface spec adds, judged against a description of the change. The text rules apply to every file; Rust also gets the Rust standards."""
@@ -15,13 +16,13 @@ import asyncio
 import dataclasses
 import json
 import pathlib
-import re
 import sys
 
 import pydantic
 import tree_sitter
 import tree_sitter_python
 import tree_sitter_rust
+import unidiff
 
 # The question sets, gates files and jev-ask.py sit beside this script.
 HERE = pathlib.Path(__file__).resolve().parent
@@ -104,6 +105,13 @@ DEFAULT_GATES = Gates(threshold=0.75, gate=0.5, gates={})
 Answers = pydantic.RootModel[dict[str, float]]
 
 
+class DiffHunk(pydantic.BaseModel):
+    header: str
+    # The hunk's added and context lines, each with its `+` or ` ` prefix; removed lines are left
+    # out.
+    lines: list[str]
+
+
 class Item(pydantic.BaseModel):
     file: str
     start: int
@@ -111,35 +119,40 @@ class Item(pydantic.BaseModel):
     name: str
     context: str
     text: str
-    # A changed hunk as git printed it, removed lines left out; reviewed in place of `text`.
-    hunk: str | None = None
+    # Changed hunks as git printed them; reviewed in place of `text` when there are any.
+    hunks: list[DiffHunk] = []
+    # Whether the diff leaves out its `@@` lines.
+    headless: bool = False
     # The whole state jev is asked about, in place of the diff.
     state: str | None = None
     # The question sets the item is reviewed against.
     sets: tuple[pathlib.Path, ...] = ()
+    # How much of the diff the item evaluates: a hunk, a file's hunks, or the full diff.
+    evaluated: str | None = None
 
     @property
     def diff(self):
-        if self.hunk is not None:
-            return "\n".join(
-                [
-                    f"diff --git a/{self.file} b/{self.file}",
-                    f"--- a/{self.file}",
-                    f"+++ b/{self.file}",
-                    self.hunk,
-                ]
+        hunks = self.hunks or [
+            DiffHunk(
+                header=f"@@ -0,0 +{self.start},{len(self.text.splitlines())} @@ "
+                f"{self.context}".rstrip(),
+                lines=[f"+{line}" for line in self.text.splitlines()],
             )
-        lines = self.text.splitlines()
-        header = (
-            f"@@ -0,0 +{self.start},{len(lines)} @@ {self.context}".rstrip()
-        )
+        ]
         return "\n".join(
             [
                 f"diff --git a/{self.file} b/{self.file}",
                 f"--- a/{self.file}",
                 f"+++ b/{self.file}",
-                header,
-                *(f"+{line}" for line in lines),
+                *(
+                    line
+                    for hunk in hunks
+                    for line in (
+                        hunk.lines
+                        if self.headless
+                        else [hunk.header, *hunk.lines]
+                    )
+                ),
             ]
         )
 
@@ -154,6 +167,7 @@ class Finding(pydantic.BaseModel):
     asks: str
     violation: str
     accepted: str
+    evaluated: str | None = None
 
 
 class Failure(pydantic.BaseModel):
@@ -350,8 +364,6 @@ def merge_constants(scanned):
     return merged
 
 
-HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
-
 MERGED = ("const", "static", "assignment")
 
 
@@ -368,31 +380,9 @@ def test_cutoff(source, marker):
     )
 
 
-def hunks(diff, cutoff):
-    """Each hunk of one file's diff with its removed lines and test code left out."""
-    current = None
-    for line in diff.splitlines():
-        header = HUNK_HEADER.match(line)
-        if header:
-            if current is not None:
-                yield current
-            current = {
-                "start": int(header[1]),
-                "line": int(header[1]),
-                "name": header[3].strip(),
-                "lines": [line],
-            }
-            continue
-        if current is None or line.startswith(("-", "\\")):
-            continue
-        if current["line"] < cutoff:
-            current["lines"].append(line)
-        current["line"] += 1
-    if current is not None:
-        yield current
-
-
-async def changed_items(root, pathspecs, base):
+async def changed_items(root, pathspecs, base, context):
+    """The hunks changed since `base`'s merge-base with HEAD, each with `context` as git diff
+    options for its context lines, and the untracked files."""
     if base.startswith("-"):
         raise UserError(f"base {base!r} is not a revision")
     code, stdout, stderr = await run(
@@ -404,7 +394,7 @@ async def changed_items(root, pathspecs, base):
     code, stdout, stderr = await run(
         "git",
         "diff",
-        "-W",
+        *context,
         "--no-color",
         "--no-ext-diff",
         "--relative",
@@ -416,11 +406,10 @@ async def changed_items(root, pathspecs, base):
     if code != 0:
         raise UserError(f"git diff {merge_base}: {stderr.strip()}")
     changed = []
-    for file_diff in re.split(r"^(?=diff --git )", stdout, flags=re.M):
-        target = re.search(r"^\+\+\+ b/(.+)$", file_diff, flags=re.M)
-        if target is None:
+    for patched in unidiff.PatchSet(stdout):
+        if patched.is_removed_file or patched.is_binary_file:
             continue
-        name = target[1]
+        name = patched.path
         # A submodule's diff names its directory.
         if not (root / name).is_file():
             continue
@@ -428,18 +417,36 @@ async def changed_items(root, pathspecs, base):
             (root / name).read_bytes(),
             language_of(name).test_marker,
         )
-        for hunk in hunks(file_diff, cutoff):
-            if not any(line.startswith("+") for line in hunk["lines"][1:]):
+        for hunk in patched:
+            lines = [
+                line
+                for line in hunk
+                if (line.is_added or line.is_context)
+                and line.target_line_no < cutoff
+            ]
+            if not any(line.is_added for line in lines):
                 continue
+            header = (
+                f"@@ -{hunk.source_start},{hunk.source_length} "
+                f"+{hunk.target_start},{hunk.target_length} @@ {hunk.section_header}"
+            )
             changed.append(
                 Item(
                     file=name,
-                    start=hunk["start"],
-                    end=hunk["line"] - 1,
-                    name=hunk["name"] or "hunk",
+                    start=hunk.target_start,
+                    end=lines[-1].target_line_no,
+                    name=hunk.section_header or "hunk",
                     context="",
                     text="",
-                    hunk="\n".join(hunk["lines"]),
+                    hunks=[
+                        DiffHunk(
+                            header=header.rstrip(),
+                            lines=[
+                                f"{line.line_type}{line.value.removesuffix('\n')}"
+                                for line in lines
+                            ],
+                        )
+                    ],
                 )
             )
     code, stdout, stderr = await run(
@@ -456,6 +463,131 @@ async def changed_items(root, pathspecs, base):
         raise UserError(f"git ls-files --others in {root}: {stderr.strip()}")
     untracked = [name for name in stdout.split("\0") if name]
     return changed, untracked
+
+
+# What one item of a change evaluates: the full diff, each file's diff, or each hunk of it.
+EVALUATIONS = ("diff", "file", "hunk")
+
+DEFAULT_CONTEXT = 20
+
+FULL_CONTEXT = "full"
+
+# A git diff context length longer than any file, so each file's diff is one hunk.
+WHOLE_FILE_LINES = 100_000_000
+
+
+def context_lines(value):
+    """The lines of context a --context value asks for: a count, or every line for `full`."""
+    if value == FULL_CONTEXT:
+        return WHOLE_FILE_LINES
+    try:
+        lines = int(value)
+    except ValueError:
+        lines = -1
+    if lines < 0:
+        raise argparse.ArgumentTypeError(
+            f"expected a count of lines, 0 or more, or {FULL_CONTEXT}; got {value!r}"
+        )
+    return lines
+
+
+def added_everywhere(item):
+    """`item` with every context line of its hunks marked as added, so it is judged too."""
+    return item.model_copy(
+        update={
+            "hunks": [
+                hunk.model_copy(
+                    update={"lines": [f"+{line[1:]}" for line in hunk.lines]}
+                )
+                for hunk in item.hunks
+            ]
+        }
+    )
+
+
+def file_diffs(hunks):
+    """One item per file holding all of the file's hunks."""
+    by_file = {}
+    for hunk in hunks:
+        by_file.setdefault(hunk.file, []).append(hunk)
+    return [
+        Item(
+            file=name,
+            start=file_hunks[0].start,
+            end=file_hunks[-1].end,
+            name="file",
+            context="",
+            text="",
+            hunks=[hunk for item in file_hunks for hunk in item.hunks],
+        )
+        for name, file_hunks in by_file.items()
+    ]
+
+
+def change_items(hunks, untracked, evaluations, all_added):
+    """The items that evaluate the change's `hunks` as each of `evaluations` says. An untracked
+    file is all added, so its diff is the whole file, and its hunks are its top-level items."""
+    if all_added:
+        hunks = [added_everywhere(hunk) for hunk in hunks]
+    new_files = []
+    for name, source in untracked.items():
+        lines = source.decode(errors="replace").splitlines()
+        lines = lines[: test_cutoff(source, language_of(name).test_marker) - 1]
+        new_files.append(
+            Item(
+                file=name,
+                start=1,
+                end=max(len(lines), 1),
+                name="file",
+                context="",
+                text="\n".join(lines),
+            )
+        )
+
+    def evaluated(items, evaluation):
+        return [
+            item.model_copy(update={"evaluated": evaluation}) for item in items
+        ]
+
+    scanned = []
+    if "diff" in evaluations:
+        files = file_diffs(hunks) + new_files
+        if files:
+            scanned.append(
+                Item(
+                    file=".",
+                    start=0,
+                    end=0,
+                    name="diff",
+                    context="",
+                    text="",
+                    state="\n".join(item.diff for item in files),
+                    sets=tuple(
+                        dict.fromkeys(
+                            s
+                            for item in files
+                            for s in language_of(item.file).sets
+                        )
+                    ),
+                    evaluated="diff",
+                )
+            )
+    if "file" in evaluations:
+        scanned += evaluated(file_diffs(hunks) + new_files, "file")
+    if "hunk" in evaluations:
+        new = [
+            item
+            for name, source in untracked.items()
+            for item in file_items(name, source, language_of(name))
+        ]
+        scanned += evaluated(
+            [
+                item.model_copy(update={"headless": True})
+                for item in hunks + merge_constants(new)
+            ],
+            "hunk",
+        )
+    return scanned
 
 
 SPEC_SECTIONS = ("## Additions", "## Declarations")
@@ -609,18 +741,32 @@ def findings(item, root, answers, gates, described):
             asks=asks,
             violation=violation,
             accepted=accepted,
+            evaluated=item.evaluated,
         )
 
 
-async def ask(item, question_set, gate):
+async def ask(item, question_set, gate, verbose):
+    state = (item.state if item.state is not None else item.diff).encode()
     async with gate:
+        if verbose:
+            code, stdout, stderr = await run(
+                str(JEV_ASK), "-q", str(question_set), "--dry-run", stdin=state
+            )
+            if code == 0:
+                print(
+                    json_dumps(
+                        {
+                            "file": item.file,
+                            "start": item.start,
+                            "item": item.name,
+                            "evaluated": item.evaluated,
+                            "request": json.loads(stdout),
+                        }
+                    ),
+                    file=sys.stderr,
+                )
         code, stdout, stderr = await run(
-            str(JEV_ASK),
-            "-q",
-            str(question_set),
-            stdin=(
-                item.state if item.state is not None else item.diff
-            ).encode(),
+            str(JEV_ASK), "-q", str(question_set), stdin=state
         )
     if code != 0:
         return Failure(
@@ -669,17 +815,56 @@ async def main():
         help="review only what changed from this revision's merge-base with HEAD to the "
         "working tree, plus untracked files; HEAD reviews uncommitted changes",
     )
+    parser.add_argument(
+        "-e",
+        "--evaluate",
+        action="append",
+        choices=EVALUATIONS,
+        help="with --base, what each request evaluates: the full diff, each file's diff, or "
+        "each hunk of it; repeatable; default: hunk",
+    )
+    parser.add_argument(
+        "-C",
+        "--context",
+        type=context_lines,
+        metavar="LINES",
+        help="with --base, the lines of context on each side of a hunk, or "
+        f"{FULL_CONTEXT} for every line of the file; default: {DEFAULT_CONTEXT}",
+    )
+    parser.add_argument(
+        "-a",
+        "--all-added",
+        action="store_true",
+        help="with --base, mark every line of each evaluated hunk as added, so jev judges the "
+        "unchanged lines too",
+    )
     parser.add_argument("--concurrency", type=int, default=8)
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="print each item's diff instead of asking jev",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="print each request sent to jev to stderr as a JSON line",
+    )
     args = parser.parse_args()
+    evaluations = args.evaluate or ["hunk"]
 
     if args.spec is not None:
-        if args.path is not None or args.base is not None:
-            raise UserError("--spec takes no PATH and no --base")
+        if (
+            args.path is not None
+            or args.base is not None
+            or args.evaluate is not None
+            or args.context is not None
+            or args.all_added
+        ):
+            raise UserError(
+                "--spec takes no PATH, no --base, no --evaluate, no --context and no "
+                "--all-added"
+            )
         if not args.description:
             raise UserError("--spec needs --description")
         spec = (
@@ -695,7 +880,12 @@ async def main():
             )
         ]
         return await review(
-            scanned, pathlib.Path(), args.gates, args.concurrency, args.dry_run
+            scanned,
+            pathlib.Path(),
+            args.gates,
+            args.concurrency,
+            args.dry_run,
+            args.verbose,
         )
     if args.path is None:
         raise UserError("give a PATH, or --spec")
@@ -709,12 +899,23 @@ async def main():
         raise UserError(f"{target} is neither a directory nor a file")
 
     if args.base is None:
-        changed, whole = [], await tracked_files(root, pathspecs)
+        if (
+            args.evaluate is not None
+            or args.context is not None
+            or args.all_added
+        ):
+            raise UserError(
+                "--evaluate, --context and --all-added need --base"
+            )
+        whole = await tracked_files(root, pathspecs)
         if target.is_file() and not whole:
             raise UserError(f"{target} is ignored by git")
     else:
-        changed, whole = await changed_items(root, pathspecs, args.base)
-    scanned = []
+        lines = DEFAULT_CONTEXT if args.context is None else args.context
+        hunks, whole = await changed_items(
+            root, pathspecs, args.base, (f"-U{lines}",)
+        )
+    sources = {}
     for name in whole:
         # git lists an untracked nested repository as its directory.
         if not (root / name).is_file():
@@ -725,19 +926,29 @@ async def main():
         except UnicodeDecodeError:
             # Not text, so nothing for the question sets to judge.
             continue
-        scanned.extend(file_items(name, source, language_of(name)))
+        sources[name] = source
+    if args.base is None:
+        scanned = merge_constants(
+            [
+                item
+                for name, source in sources.items()
+                for item in file_items(name, source, language_of(name))
+            ]
+        )
+    else:
+        scanned = change_items(hunks, sources, evaluations, args.all_added)
     scanned = [
         item.model_copy(
             update={
                 "sets": (args.question_set,)
                 if args.question_set
-                else language_of(item.file).sets
+                else item.sets or language_of(item.file).sets
             }
         )
-        for item in changed + merge_constants(scanned)
+        for item in scanned
     ]
     return await review(
-        scanned, root, args.gates, args.concurrency, args.dry_run
+        scanned, root, args.gates, args.concurrency, args.dry_run, args.verbose
     )
 
 
@@ -749,7 +960,7 @@ def load_gates(question_set, override):
     return Gates.model_validate_json(path.read_text())
 
 
-async def review(scanned, root, gates_override, concurrency, dry_run):
+async def review(scanned, root, gates_override, concurrency, dry_run, verbose):
     if dry_run:
         for item in scanned:
             print(
@@ -763,7 +974,9 @@ async def review(scanned, root, gates_override, concurrency, dry_run):
     gates = {s: load_gates(s, gates_override) for s in sets}
     asked = [(item, s) for item in scanned for s in item.sets]
     gate = asyncio.Semaphore(concurrency)
-    results = await asyncio.gather(*(ask(item, s, gate) for item, s in asked))
+    results = await asyncio.gather(
+        *(ask(item, s, gate, verbose) for item, s in asked)
+    )
     found = 0
     failures = []
     # A question two of an item's sets both ask is reported once, from the first set.
@@ -781,7 +994,7 @@ async def review(scanned, root, gates_override, concurrency, dry_run):
                 continue
             reported.add((id(item), finding.question))
             found += 1
-            print(json_dumps(finding.model_dump()))
+            print(json_dumps(finding.model_dump(exclude_none=True)))
     for failure in failures:
         print(json_dumps({"failure": failure.model_dump()}))
     print(
