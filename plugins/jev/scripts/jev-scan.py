@@ -2,34 +2,41 @@
 # /// script
 # requires-python = ">=3.14"
 # dependencies = [
+#   "pathspec>=0.12,<2",
 #   "pydantic>=2,<3",
+#   "pyyaml>=6,<7",
 #   "tree-sitter>=0.23,<0.26",
+#   "tree-sitter-bash>=0.23,<0.26",
 #   "tree-sitter-python>=0.23,<0.26",
 #   "tree-sitter-rust>=0.23,<0.25",
 #   "unidiff>=0.7,<0.8",
 # ]
 # ///
-"""Review code and text with jev question sets and print the findings as JSON lines: every top-level item of the Rust, Python and Markdown files in a git repository, the hunks of any text file changed since a revision, or each declaration a Rust surface spec adds, judged against a description of the change. The text rules apply to every file; Rust also gets the Rust standards."""
+"""Review code and text with jev question sets and print the findings as JSON lines: every top-level item of the files in a known language under a root, or the hunks of any text file changed since a revision. Each file is reviewed against the question sets under --config whose `when` matches it."""
 
 import argparse
 import asyncio
 import dataclasses
+import functools
 import json
 import pathlib
+import re
 import sys
 
+import pathspec
 import pydantic
+import yaml
 import tree_sitter
+import tree_sitter_bash
 import tree_sitter_python
 import tree_sitter_rust
 import unidiff
 
-# The question sets, gates files and jev-ask.py sit beside this script.
 HERE = pathlib.Path(__file__).resolve().parent
 JEV_ASK = HERE / "jev-ask.py"
-DEFAULT_SET = HERE / "standards.yaml"
-DEFAULT_SPEC_SET = HERE / "surface.yaml"
-TEXT_SET = HERE / "text.yaml"
+# The default --config: every *.yaml under it, at any depth, is a question set; its `when` picks
+# the files it reviews.
+QUESTIONS = HERE.parent / "questions"
 
 # Exit status when every item was reviewed, and when some items failed to.
 PARTIAL = 2
@@ -57,8 +64,144 @@ PYTHON_SKIPPED = {
     "pass_statement",
 }
 
+# Top-level sh commands that change how every other part of the script runs; each item of a
+# script carries the ones outside it as context.
+SHELL_SETUP = {"set", "trap"}
+
 RUST = tree_sitter.Language(tree_sitter_rust.language())
 PYTHON = tree_sitter.Language(tree_sitter_python.language())
+BASH = tree_sitter.Language(tree_sitter_bash.language())
+
+
+@dataclasses.dataclass(frozen=True)
+class Syntax:
+    # Splits a whole file into items; with none, the whole file is one item.
+    parser: tree_sitter.Language | None = None
+    # A line marking where test code starts; it and everything after it is left out.
+    test_marker: str | None = None
+
+
+# The languages a question set's `when.language` can name.
+SYNTAXES = {
+    "rust": Syntax(parser=RUST, test_marker="#[cfg(test)]"),
+    "python": Syntax(parser=PYTHON),
+    "sh": Syntax(parser=BASH),
+    "just": Syntax(),
+    "markdown": Syntax(),
+}
+
+PLAIN = Syntax()
+
+SUFFIXES = {".rs": "rust", ".py": "python", ".just": "just", ".md": "markdown"}
+
+JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
+
+# A first line that matches one of these marks a Python script, or failing that a POSIX sh
+# script.
+PYTHON_SHEBANGS = (
+    re.compile(r"^#!\S*/python[\d.]*(\s|$)"),
+    re.compile(r"^#!\S*/env\s+(-\S+\s+)*python[\d.]*(\s|$)"),
+    re.compile(r"^#!/usr/bin/env.*uv.*run"),
+)
+SHELL_SHEBANGS = (
+    re.compile(r"^#!\S*/sh(\s|$)"),
+    re.compile(r"^#!\S*/env\s+(-\S+\s+)*sh(\s|$)"),
+)
+
+
+def has_shebang(source, patterns):
+    first = source.split(b"\n", 1)[0].decode(errors="replace")
+    return any(pattern.search(first) for pattern in patterns)
+
+
+def detect_language(name, source):
+    """The language of a file, a key of SYNTAXES, or None."""
+    path = pathlib.PurePath(name)
+    if path.name in JUSTFILE_NAMES:
+        return "just"
+    if path.suffix in SUFFIXES:
+        return SUFFIXES[path.suffix]
+    if has_shebang(source, PYTHON_SHEBANGS):
+        return "python"
+    if has_shebang(source, SHELL_SHEBANGS):
+        return "sh"
+    return None
+
+
+class When(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    # The file's detected language is one of these.
+    language: tuple[str, ...] = ()
+    # gitignore(5) patterns matched against the file's path from the scanned directory.
+    pattern: tuple[str, ...] = ()
+
+
+class Gates(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    # A noul answer at or above this flags the question.
+    threshold: float = 0.75
+    # A gated question is suppressed when every one of its gate questions is at or above this.
+    gate: float = 0.5
+    # Question to the gate questions that together suppress it; gate questions are never findings.
+    gates: dict[str, list[str]] = {}
+
+
+class QuestionSetFile(pydantic.BaseModel):
+    """A question set file as jev-scan.py reads it; jev-ask.py reads the questions."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    # What the set covers, what it leaves out, and where it came from.
+    description: str
+    # Without one, the set reviews only what --set gives it.
+    when: When | None = None
+    # Which answers are findings.
+    decision: Gates = Gates()
+    questions: dict[str, object]
+
+
+@functools.cache
+def read_set(path):
+    try:
+        return QuestionSetFile.model_validate(
+            yaml.safe_load(path.read_text())
+        )
+    except (OSError, yaml.YAMLError, pydantic.ValidationError) as e:
+        raise UserError(f"question set {path}: {e}") from e
+
+
+@dataclasses.dataclass(frozen=True)
+class QuestionSet:
+    path: pathlib.Path
+    languages: frozenset[str]
+    patterns: pathspec.GitIgnoreSpec
+
+
+@functools.cache
+def question_sets(config):
+    """Every question set under `config` with a `when`, sorted by path."""
+    if not config.is_dir():
+        raise UserError(f"--config {config} is not a directory")
+    found = []
+    for path in sorted(config.rglob("*.yaml")):
+        parsed = read_set(path)
+        if parsed.when is None:
+            continue
+        if unknown := sorted(set(parsed.when.language) - SYNTAXES.keys()):
+            raise UserError(
+                f"question set {path}: unknown language {', '.join(unknown)}; "
+                f"expected one of {', '.join(SYNTAXES)}"
+            )
+        found.append(
+            QuestionSet(
+                path=path,
+                languages=frozenset(parsed.when.language),
+                patterns=pathspec.GitIgnoreSpec.from_lines(parsed.when.pattern),
+            )
+        )
+    return tuple(found)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -71,35 +214,30 @@ class Language:
     test_marker: str | None = None
 
 
-LANGUAGES = {
-    ".rs": Language(
-        sets=(DEFAULT_SET, TEXT_SET), parser=RUST, test_marker="#[cfg(test)]"
-    ),
-    ".py": Language(sets=(TEXT_SET,), parser=PYTHON),
-}
+def language_of(name, source, sets):
+    """How a file is reviewed against `sets`; `name` is its path from the root."""
+    detected = detect_language(name, source)
+    syntax = SYNTAXES.get(detected, PLAIN)
+    return Language(
+        sets=tuple(
+            question_set.path
+            for question_set in sets
+            if detected in question_set.languages
+            or question_set.patterns.match_file(name)
+        ),
+        parser=syntax.parser,
+        test_marker=syntax.test_marker,
+    )
 
-OTHER = Language(sets=(TEXT_SET,))
 
-# The files a whole-directory scan reviews; with --base, every changed text file is reviewed.
-WHOLE_SCAN = ("*.rs", "*.py", "*.md")
-
-
-def language_of(name):
-    return LANGUAGES.get(pathlib.PurePath(name).suffix, OTHER)
+def in_whole_scan(name, source):
+    """Whether a whole-directory scan reviews the file: it has a language. With --base, every
+    changed text file is reviewed."""
+    return detect_language(name, source) is not None
 
 
 class UserError(Exception):
     pass
-
-
-class Gates(pydantic.BaseModel):
-    threshold: float
-    gate: float
-    gates: dict[str, list[str]]
-
-
-# For a question set with no gates file.
-DEFAULT_GATES = Gates(threshold=0.75, gate=0.5, gates={})
 
 
 Answers = pydantic.RootModel[dict[str, float]]
@@ -314,7 +452,62 @@ def python_items(nodes, source, path, context=""):
         yield item(start, node.end_point[0], name)
 
 
+def shell_items(nodes, source, path):
+    """Each function of a sh script, and each run of top-level code between them. Every item
+    carries the script's top-level set and trap commands that lie outside it as context."""
+    lines = source.decode().splitlines()
+    # The shebang is not a comment for the question sets to judge.
+    first_line = 1 if lines and lines[0].startswith("#!") else 0
+    setup = []
+    for node in nodes:
+        name = node.child_by_field_name("name") if node.type == "command" else None
+        if name is not None and source[name.start_byte : name.end_byte].decode() in SHELL_SETUP:
+            setup.append(node)
+
+    def item(first, last, name):
+        start = max(
+            (leading(first, PYTHON_LEADING) or [first])[0].start_point[0],
+            first_line,
+        )
+        end = last.end_point[0]
+        return Item(
+            file=path,
+            start=start + 1,
+            end=end + 1,
+            name=name,
+            context="; ".join(
+                " ".join(source[n.start_byte : n.end_byte].decode().split())
+                for n in setup
+                if not start <= n.start_point[0] <= end
+            ),
+            text="\n".join(lines[start : end + 1]),
+        )
+
+    run = []
+    for node in nodes:
+        if node.type == "comment":
+            continue
+        if node.type != "function_definition":
+            run.append(node)
+            continue
+        if run:
+            yield item(run[0], run[-1], "top-level")
+            run = []
+        name = node.child_by_field_name("name")
+        label = source[name.start_byte : name.end_byte].decode() if name else ""
+        yield item(node, node, f"function {label}".strip())
+    if run:
+        yield item(run[0], run[-1], "top-level")
+
+
 def file_items(name, source, language):
+    return [
+        item.model_copy(update={"sets": language.sets})
+        for item in parsed_items(name, source, language)
+    ]
+
+
+def parsed_items(name, source, language):
     match language.parser:
         case None:
             lines = source.decode().splitlines()
@@ -332,6 +525,11 @@ def file_items(name, source, language):
             tree = tree_sitter.Parser(parser).parse(source)
             return list(
                 python_items(tree.root_node.named_children, source, name)
+            )
+        case parser if parser is BASH:
+            tree = tree_sitter.Parser(parser).parse(source)
+            return list(
+                shell_items(tree.root_node.named_children, source, name)
             )
         case parser:
             tree = tree_sitter.Parser(parser).parse(source)
@@ -380,7 +578,7 @@ def test_cutoff(source, marker):
     )
 
 
-async def changed_items(root, pathspecs, base, context):
+async def changed_items(root, pathspecs, base, context, sets):
     """The hunks changed since `base`'s merge-base with HEAD, each with `context` as git diff
     options for its context lines, and the untracked files."""
     if base.startswith("-"):
@@ -413,10 +611,9 @@ async def changed_items(root, pathspecs, base, context):
         # A submodule's diff names its directory.
         if not (root / name).is_file():
             continue
-        cutoff = test_cutoff(
-            (root / name).read_bytes(),
-            language_of(name).test_marker,
-        )
+        source = (root / name).read_bytes()
+        language = language_of(name, source, sets)
+        cutoff = test_cutoff(source, language.test_marker)
         for hunk in patched:
             lines = [
                 line
@@ -438,6 +635,7 @@ async def changed_items(root, pathspecs, base, context):
                     name=hunk.section_header or "hunk",
                     context="",
                     text="",
+                    sets=language.sets,
                     hunks=[
                         DiffHunk(
                             header=header.rstrip(),
@@ -518,21 +716,23 @@ def file_diffs(hunks):
             name="file",
             context="",
             text="",
+            sets=file_hunks[0].sets,
             hunks=[hunk for item in file_hunks for hunk in item.hunks],
         )
         for name, file_hunks in by_file.items()
     ]
 
 
-def change_items(hunks, untracked, evaluations, all_added):
+def change_items(hunks, untracked, evaluations, all_added, sets):
     """The items that evaluate the change's `hunks` as each of `evaluations` says. An untracked
     file is all added, so its diff is the whole file, and its hunks are its top-level items."""
     if all_added:
         hunks = [added_everywhere(hunk) for hunk in hunks]
     new_files = []
     for name, source in untracked.items():
+        language = language_of(name, source, sets)
         lines = source.decode(errors="replace").splitlines()
-        lines = lines[: test_cutoff(source, language_of(name).test_marker) - 1]
+        lines = lines[: test_cutoff(source, language.test_marker) - 1]
         new_files.append(
             Item(
                 file=name,
@@ -541,6 +741,7 @@ def change_items(hunks, untracked, evaluations, all_added):
                 name="file",
                 context="",
                 text="\n".join(lines),
+                sets=language.sets,
             )
         )
 
@@ -566,7 +767,7 @@ def change_items(hunks, untracked, evaluations, all_added):
                         dict.fromkeys(
                             s
                             for item in files
-                            for s in language_of(item.file).sets
+                            for s in item.sets
                         )
                     ),
                     evaluated="diff",
@@ -578,7 +779,7 @@ def change_items(hunks, untracked, evaluations, all_added):
         new = [
             item
             for name, source in untracked.items()
-            for item in file_items(name, source, language_of(name))
+            for item in file_items(name, source, language_of(name, source, sets))
         ]
         scanned += evaluated(
             [
@@ -590,85 +791,34 @@ def change_items(hunks, untracked, evaluations, all_added):
     return scanned
 
 
-SPEC_SECTIONS = ("## Additions", "## Declarations")
-
-SPEC_STATE = """Description of the change:
-{description}
-
-Every declaration the change adds, from its surface spec:
-{additions}
-
-Declaration under review, in {file}:
-```rust
-{declaration}
-```
-"""
+async def current_repository():
+    code, stdout, _ = await run("git", "rev-parse", "--show-toplevel", cwd=pathlib.Path.cwd())
+    if code != 0:
+        raise UserError("the current directory is outside a git repository; give --root")
+    return pathlib.Path(stdout.strip())
 
 
-def spec_items(spec, description, parser):
-    """Each declaration under the spec's `## Additions`, or `## Declarations` in a spec of
-    whole files, its lines counted in the spec."""
-    lines = spec.splitlines()
-    sections = [n for n, line in enumerate(lines) if line in SPEC_SECTIONS]
-    if not sections:
-        raise UserError(
-            "the spec has no ## Additions or ## Declarations section"
-        )
-    begin = sections[0]
-    end = next(
-        (
-            i
-            for i in range(begin + 1, len(lines))
-            if lines[i].startswith("## ")
-        ),
-        len(lines),
-    )
-    additions = "\n".join(lines[begin:end]).strip()
-    found = []
-    file = None
-    i = begin + 1
-    while i < end:
-        line = lines[i].strip()
-        if line.startswith("### "):
-            file = line.removeprefix("### ").strip()
-        elif line == "```rust":
-            close = next(
-                (j for j in range(i + 1, end) if lines[j].strip() == "```"),
-                None,
-            )
-            if close is None:
-                raise UserError(
-                    f"the rust block at spec line {i + 1} is not closed"
-                )
-            if file is None:
-                raise UserError(
-                    f"the rust block at spec line {i + 1} has no ### file heading"
-                )
-            source = "\n".join(lines[i + 1 : close]).encode()
-            tree = parser.parse(source)
-            for item in items(tree.root_node.named_children, source, file):
-                declaration = (
-                    f"{item.context} {{\n{item.text}\n}}"
-                    if item.context
-                    else item.text
-                )
-                found.append(
-                    item.model_copy(
-                        update={
-                            "start": item.start + i + 1,
-                            "end": item.end + i + 1,
-                            "state": SPEC_STATE.format(
-                                description=description,
-                                additions=additions,
-                                file=file,
-                                declaration=declaration,
-                            ),
-                        }
-                    )
-                )
-            i = close
-        i += 1
-    return found
+async def in_repository(root):
+    code, stdout, _ = await run("git", "rev-parse", "--is-inside-work-tree", cwd=root)
+    return code == 0 and stdout.strip() == "true"
+
+
+def all_files(root, targets):
+    """The files under each of `targets`, or each target itself, by path from `root`."""
+    stack = []
+    files = set()
+    for target in targets:
+        if target.is_file():
+            files.add(str(target.relative_to(root)))
+        else:
+            stack.append(target)
+    while stack:
+        for path in stack.pop().iterdir():
+            if path.is_dir():
+                stack.append(path)
+            elif path.is_file():
+                files.add(str(path.relative_to(root)))
+    return sorted(files)
 
 
 async def tracked_files(root, pathspecs):
@@ -781,34 +931,35 @@ async def ask(item, question_set, gate, verbose):
 async def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "path",
-        nargs="?",
+        "paths",
+        nargs="*",
         type=pathlib.Path,
-        help="a file, or a directory, inside a git repository; a directory without --base scans its "
-        ".rs, .py and .md files, and with --base every changed text file",
+        metavar="PATH",
+        help="files or directories to review, relative to --root; default: the whole root. A "
+        "directory without --base scans its files in a known language, and with --base every "
+        "changed text file",
     )
     parser.add_argument(
-        "--spec",
+        "--root",
         type=pathlib.Path,
-        help="a Rust surface spec, or - for stdin; reviews each declaration under ## Additions "
-        "instead of PATH, and findings give its lines in the spec",
+        help="the directory PATHs are relative to, each question set's `when.pattern` is matched "
+        "from, and git runs in; default: the git repository holding the current directory. "
+        "Outside a git repository every file counts as new",
     )
     parser.add_argument(
-        "--description",
-        help="what the change is for, in a few sentences; required with --spec",
+        "-c",
+        "--config",
+        type=pathlib.Path,
+        default=QUESTIONS,
+        help=f"the directory of question sets; every *.yaml under it, at any depth, whose `when` "
+        f"matches a file reviews it; default: {QUESTIONS}",
     )
     parser.add_argument(
         "--set",
         dest="question_set",
         type=pathlib.Path,
-        help=f"question set for every item; default: {TEXT_SET.name} for every file, with "
-        f"{DEFAULT_SET.name} too for .rs, or {DEFAULT_SPEC_SET.name} with --spec",
-    )
-    parser.add_argument(
-        "--gates",
-        type=pathlib.Path,
-        help="gates file; default: each question set's path with .gates.json, or the default "
-        "gates when there is none",
+        help="question set for every item; default: each set under --config whose `when` "
+        "matches the file",
     )
     parser.add_argument(
         "--base",
@@ -853,67 +1004,44 @@ async def main():
     args = parser.parse_args()
     evaluations = args.evaluate or ["hunk"]
 
-    if args.spec is not None:
-        if (
-            args.path is not None
-            or args.base is not None
-            or args.evaluate is not None
-            or args.context is not None
-            or args.all_added
-        ):
-            raise UserError(
-                "--spec takes no PATH, no --base, no --evaluate, no --context and no "
-                "--all-added"
-            )
-        if not args.description:
-            raise UserError("--spec needs --description")
-        spec = (
-            sys.stdin.read()
-            if str(args.spec) == "-"
-            else args.spec.expanduser().read_text()
-        )
-        sets = (args.question_set or DEFAULT_SPEC_SET,)
-        scanned = [
-            item.model_copy(update={"sets": sets})
-            for item in spec_items(
-                spec, args.description, tree_sitter.Parser(RUST)
-            )
-        ]
-        return await review(
-            scanned,
-            pathlib.Path(),
-            args.gates,
-            args.concurrency,
-            args.dry_run,
-            args.verbose,
-        )
-    if args.path is None:
-        raise UserError("give a PATH, or --spec")
-    target = args.path.expanduser().resolve()
-    if target.is_dir():
-        root = target
-        pathspecs = ["."] if args.base is not None else list(WHOLE_SCAN)
-    elif target.is_file():
-        root, pathspecs = target.parent, [target.name]
-    else:
-        raise UserError(f"{target} is neither a directory nor a file")
+    root = (
+        await current_repository()
+        if args.root is None
+        else args.root.resolve()
+    )
+    if not root.is_dir():
+        raise UserError(f"--root {root} is not a directory")
+    sets = question_sets(args.config.resolve())
+    targets = []
+    for path in args.paths:
+        if path.is_absolute():
+            raise UserError(f"{path} is absolute; give PATHs relative to --root")
+        target = (root / path).resolve()
+        if not target.is_relative_to(root):
+            raise UserError(f"{path} is outside --root {root}")
+        if not target.is_file() and not target.is_dir():
+            raise UserError(f"{path} is neither a directory nor a file in {root}")
+        targets.append(target)
+    targets = targets or [root]
+    pathspecs = [str(target.relative_to(root)) for target in targets]
+    # Files named on the command line are reviewed whatever their language.
+    named = {str(target.relative_to(root)) for target in targets if target.is_file()}
 
-    if args.base is None:
-        if (
-            args.evaluate is not None
-            or args.context is not None
-            or args.all_added
-        ):
-            raise UserError(
-                "--evaluate, --context and --all-added need --base"
-            )
+    if args.base is None and (
+        args.evaluate is not None or args.context is not None or args.all_added
+    ):
+        raise UserError("--evaluate, --context and --all-added need --base")
+    if not await in_repository(root):
+        # Outside a repository every file is new: reviewed whole, or as added with --base.
+        hunks, whole = [], all_files(root, targets)
+    elif args.base is None:
         whole = await tracked_files(root, pathspecs)
-        if target.is_file() and not whole:
-            raise UserError(f"{target} is ignored by git")
+        if ignored := sorted(named - set(whole)):
+            raise UserError(f"{', '.join(ignored)} ignored by git")
     else:
         lines = DEFAULT_CONTEXT if args.context is None else args.context
         hunks, whole = await changed_items(
-            root, pathspecs, args.base, (f"-U{lines}",)
+            root, pathspecs, args.base, (f"-U{lines}",), sets
         )
     sources = {}
     for name in whole:
@@ -926,41 +1054,34 @@ async def main():
         except UnicodeDecodeError:
             # Not text, so nothing for the question sets to judge.
             continue
+        if args.base is None and name not in named and not in_whole_scan(name, source):
+            continue
         sources[name] = source
     if args.base is None:
         scanned = merge_constants(
             [
                 item
                 for name, source in sources.items()
-                for item in file_items(name, source, language_of(name))
+                for item in file_items(name, source, language_of(name, source, sets))
             ]
         )
     else:
-        scanned = change_items(hunks, sources, evaluations, args.all_added)
+        scanned = change_items(hunks, sources, evaluations, args.all_added, sets)
     scanned = [
         item.model_copy(
             update={
-                "sets": (args.question_set,)
-                if args.question_set
-                else item.sets or language_of(item.file).sets
+                "sets": (args.question_set,) if args.question_set else item.sets
             }
         )
         for item in scanned
+        if args.question_set or item.sets
     ]
     return await review(
-        scanned, root, args.gates, args.concurrency, args.dry_run, args.verbose
+        scanned, root, args.concurrency, args.dry_run, args.verbose
     )
 
 
-def load_gates(question_set, override):
-    """The gates for `question_set`: `override`, the .gates.json beside it, or the defaults."""
-    path = override or question_set.with_suffix(".gates.json")
-    if override is None and not path.exists():
-        return DEFAULT_GATES
-    return Gates.model_validate_json(path.read_text())
-
-
-async def review(scanned, root, gates_override, concurrency, dry_run, verbose):
+async def review(scanned, root, concurrency, dry_run, verbose):
     if dry_run:
         for item in scanned:
             print(
@@ -971,7 +1092,7 @@ async def review(scanned, root, gates_override, concurrency, dry_run, verbose):
 
     sets = sorted({s for item in scanned for s in item.sets})
     described = {s: await descriptions(s) for s in sets}
-    gates = {s: load_gates(s, gates_override) for s in sets}
+    gates = {s: read_set(s).decision for s in sets}
     asked = [(item, s) for item in scanned for s in item.sets]
     gate = asyncio.Semaphore(concurrency)
     results = await asyncio.gather(

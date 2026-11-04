@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Runs jev over code in a git repository, a file or a directory, all of it or only the changes since a revision, and reports the jev findings that hold up, most severe first. Reports jev's findings only. The prompt must be exactly a JSON object {"path": "<absolute path of a file or directory>", "base": "<git revision>", "scope": ["<absolute path of a directory>", ...]}; base is optional and limits the review to changes from its merge-base with HEAD through the working tree ("HEAD" for uncommitted changes, "main" for a branch). scope names the directories the agent's sandbox mounts. Any other prompt is refused before the agent starts.
+description: Runs jev over code in a git repository, a file or a directory, all of it or only the changes since a revision, and reports the jev findings that hold up, most severe first. Reports jev's findings only. The prompt must be exactly a JSON object {"path": "<absolute path of a file or directory>", "base": "<git revision>", "scope": ["<absolute path of a directory>", ...]}; path must be inside a scope directory; base is optional and limits the review to changes from its merge-base with HEAD through the working tree ("HEAD" for uncommitted changes, "main" for a branch). scope names the directories the agent's sandbox mounts. Any other prompt is refused before the agent starts.
 tools: mcp__jev__scan, mcp__jev__read, LSP
 omitClaudeMd: true
 ---

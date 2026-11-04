@@ -1,4 +1,4 @@
-import type { ProcessRunInit, ProcessRunResult, Register, ToolSpec } from 'claude-code'
+import type { Register, ToolSpec } from 'claude-code'
 
 const AGENT_TYPE = 'jev:edit'
 
@@ -68,11 +68,23 @@ const SANDBOX_TOOLS: readonly ToolSpec[] = [
 // The keys of a tool.call input that are not the tool's arguments.
 const ENVELOPE_KEYS: ReadonlySet<string> = new Set(['tool', 'tool_use_id', 'agentId', 'requestMeta'])
 
-// The arguments a jev:audit agent's one scan runs with, from its prompt.
-type ScanRequest = { path: string; base?: string }
+// The arguments a jev:audit agent's one scan runs with, from its prompt: `path` is relative to `root`.
+type ScanRequest = { root: string; path: string; base?: string }
 
 // The directories a jev agent's bash and file tools mount read-write, named by its spawner.
 type Scope = readonly string[]
+
+// The deepest scope directory holding `path`, and `path` relative to it.
+const placeIn = (scope: Scope, path: string): { root: string; path: string } | undefined => {
+  const root = scope
+    .map(dir => dir.replace(/\/+$/, '') || '/')
+    .filter(dir => path === dir || path.startsWith(dir === '/' ? '/' : `${dir}/`))
+    .sort((a, b) => b.length - a.length)[0]
+  if (root === undefined) {
+    return undefined
+  }
+  return { root, path: path === root ? '.' : path.slice(root === '/' ? 1 : root.length + 1) }
+}
 
 const SCOPE_FORMAT = '"scope": [<absolute path of a directory>, ...]'
 
@@ -90,102 +102,7 @@ type Sandbox = { scope: Scope; tmp: string }
 // A spawn's parsed prompt: the scope, and the prompt the agent runs with.
 type SpawnPrompt = { scope: Scope; prompt: string; request?: ScanRequest }
 
-// A question set's decision logic, read from the `.gates.json` beside it and
-// shared with scripts/jev-scan.py and the calibration in calibration/standards.
-type Gates = {
-  // A noul answer at or above this flags the question.
-  threshold: number
-  // A gated rule is suppressed when every one of its gate questions is at or above this.
-  gate: number
-  // Rule question to the gate questions that together suppress it. Gate
-  // questions are never reported as findings.
-  gates: Readonly<Record<string, readonly string[]>>
-}
-
-// For a question set with no gates file.
-const DEFAULT_GATES: Gates = { threshold: 0.75, gate: 0.5, gates: {} }
-
-type QuestionSet = {
-  // Matched against the path's basename; the first entry that matches applies.
-  globs: readonly string[]
-  // Relative to the plugin's scripts/; the change is reviewed against each, one at a time.
-  sets: readonly string[]
-  // A line marking where test code starts; it and everything after it is left out of the review.
-  testModule?: string
-}
-
-// text.yaml, the rules for comments, error text and prose, applies to every file.
-const QUESTION_SETS: readonly QuestionSet[] = [
-  { globs: ['*.rs'], sets: ['standards.yaml', 'text.yaml'], testModule: '#[cfg(test)]' },
-  { globs: ['*'], sets: ['text.yaml'] },
-]
-
 const WRITE_TOOLS: ReadonlySet<string> = new Set(['Edit', 'Write', 'mcp__jev__edit', 'mcp__jev__write'])
-
-const globToRegExp = (glob: string): RegExp =>
-  new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`)
-
-const SET_MATCHERS = QUESTION_SETS.map(questionSet => ({
-  patterns: questionSet.globs.map(globToRegExp),
-  questionSet,
-}))
-
-const setFor = (path: string): QuestionSet | undefined => {
-  const basename = path.slice(path.lastIndexOf('/') + 1)
-  return SET_MATCHERS.find(({ patterns }) => patterns.some(pattern => pattern.test(basename)))
-    ?.questionSet
-}
-
-const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)/
-
-// The diff's lines whose line number in the new file is below `cutoff`, with
-// the file headers before the first hunk.
-const truncateDiff = (diff: string, cutoff: number): string => {
-  let line = 0
-  return diff
-    .split('\n')
-    .filter(text => {
-      const hunk = HUNK_HEADER.exec(text)
-      if (hunk) {
-        line = Number(hunk[1])
-        return line < cutoff
-      }
-      if (line === 0 || text.startsWith('\\')) {
-        return line < cutoff
-      }
-      const isKept = line < cutoff
-      line += 1
-      return isKept
-    })
-    .join('\n')
-}
-
-const hasAddedLines = (diff: string): boolean =>
-  diff.split('\n').some(line => line.startsWith('+') && !line.startsWith('+++'))
-
-const isFinding = (
-  question: string,
-  answers: Readonly<Record<string, number>>,
-  { threshold, gate, gates }: Gates,
-): boolean => {
-  const gating = gates[question]
-  return (
-    (answers[question] ?? 0) >= threshold &&
-    !Object.values(gates).some(names => names.includes(question)) &&
-    !(gating !== undefined && gating.every(name => (answers[name] ?? 0) >= gate))
-  )
-}
-
-const isGates = (value: unknown): value is Gates =>
-  isRecord(value) &&
-  typeof value.threshold === 'number' &&
-  typeof value.gate === 'number' &&
-  isRecord(value.gates) &&
-  Object.values(value.gates).every(
-    names => Array.isArray(names) && names.every(name => typeof name === 'string'),
-  )
-
-const dirname = (path: string): string => path.slice(0, path.lastIndexOf('/')) || '/'
 
 // Each jev:audit agent's scan arguments, from its prompt at spawn.
 const scanRequests = new Map<string, ScanRequest>()
@@ -220,7 +137,11 @@ const parseAuditPrompt = (prompt: string): SpawnPrompt | string => {
   if (typeof roots === 'string') {
     return roots
   }
-  const request: ScanRequest = base === undefined ? { path } : { path, base }
+  const placed = placeIn(roots, path)
+  if (placed === undefined) {
+    return 'path is not inside a scope directory'
+  }
+  const request: ScanRequest = base === undefined ? placed : { ...placed, base }
   return { scope: roots, prompt: JSON.stringify(request), request }
 }
 
@@ -272,57 +193,8 @@ const parseJson = (text: string): unknown => {
   }
 }
 
-const isNumberRecord = (value: unknown): value is Record<string, number> =>
-  typeof value === 'object' &&
-  value !== null &&
-  Object.values(value).every(v => typeof v === 'number')
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
-
-const asText = (value: unknown): string | undefined =>
-  typeof value === 'string' ? value : undefined
-
-// What a question asks, what a violation looks like and what it accepts, from one question of
-// `jev-ask.py --dry-run`'s canonical payload. `instructions` is a string, or an
-// object holding `statement` or `question`.
-const describe = (question: unknown): string => {
-  if (!isRecord(question)) {
-    return ''
-  }
-  const { instructions, criteria } = question
-  const asks = isRecord(instructions)
-    ? asText(instructions.statement) ?? asText(instructions.question)
-    : asText(instructions)
-  const violation = isRecord(criteria) ? asText(criteria.true) : undefined
-  const accepted = isRecord(criteria) ? asText(criteria.false) : undefined
-  return [asks, violation && `Violation: ${violation}`, accepted && `Accepted: ${accepted}`]
-    .filter(Boolean)
-    .join('\n  ')
-}
-
-// Question descriptions per question set path, read once from a dry run.
-const descriptions = new Map<string, Readonly<Record<string, string>>>()
-
-type Run = (argv: readonly string[], init?: ProcessRunInit) => Promise<ProcessRunResult>
-
-const describeSet = async (
-  run: Run,
-  setPath: string,
-): Promise<Readonly<Record<string, string>> | undefined> => {
-  const dry = await run([`${dirname(setPath)}/jev-ask.py`, '--dry-run', '-q', setPath], {
-    stdin: 'x',
-  })
-  const payload = parseJson(dry.stdout)
-  if (dry.exitCode !== 0 || !isRecord(payload) || !isRecord(payload.questions)) {
-    return undefined
-  }
-  const described = Object.fromEntries(
-    Object.entries(payload.questions).map(([name, question]) => [name, describe(question)]),
-  )
-  descriptions.set(setPath, described)
-  return described
-}
 
 export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
@@ -339,100 +211,38 @@ export const register: Register = on => {
     if (!applies || typeof path !== 'string' || !path.startsWith('/')) {
       return result
     }
-    const set = setFor(path)
-    if (set === undefined) {
-      return result
-    }
-
     const fail = (reason: string) => {
       $.ui.toast(`${$.plugin.name}: ${reason}`)
       return { ...result, context: [...(result.context ?? []), `jev review of ${path} failed: ${reason}`] }
     }
 
-    // A tracked file diffs against the index; an untracked one, or one outside
-    // a repository, diffs against /dev/null.
-    const cwd = dirname(path)
-    const tracked = await $.process.run(['git', 'diff', '-W', '--', path], { cwd })
-    const diff =
-      tracked.exitCode === 0 && tracked.stdout.trim()
-        ? tracked
-        : await $.process.run(['git', 'diff', '--no-index', '--', '/dev/null', path], { cwd })
-    // --no-index exits 1 when the files differ.
-    if (diff.exitCode > 1 || !diff.stdout.trim()) {
-      return fail(`git diff: ${diff.stderr.trim() || 'no changes found'}`)
+    const placed = placeIn(sandboxes.get(agentId)?.scope ?? [], path)
+    if (placed === undefined) {
+      return fail('the file is outside the agent\'s scope')
     }
-    const added = diff.stdout
-      .split('\n')
-      .filter(line => !line.startsWith('-') || line.startsWith('---'))
-      .join('\n')
-    // grep exits 1 when the file has no test module.
-    const marker =
-      set.testModule === undefined
-        ? undefined
-        : await $.process.run(['grep', '-n', '-m1', '-x', '-F', set.testModule, path])
-    if (marker !== undefined && marker.exitCode > 1) {
-      return fail(`grep ${set.testModule}: ${marker.stderr.trim()}`)
+    // jev-scan.py exits 2 when it reviewed some items and failed others.
+    const scan = await $.process.run(
+      [
+        `${$.plugin.root}/scripts/jev-scan.py`,
+        '--root',
+        placed.root,
+        '--base',
+        'HEAD',
+        '--evaluate',
+        'file',
+        '--',
+        placed.path,
+      ],
+      { timeoutMs: 600_000 },
+    )
+    if (scan.exitCode !== 0 && scan.exitCode !== 2) {
+      return fail(`jev-scan.py: ${scan.stderr.trim()}`)
     }
-    const cutoff = marker === undefined ? Number.NaN : Number.parseInt(marker.stdout, 10)
-    const state = Number.isNaN(cutoff) ? added : truncateDiff(added, cutoff)
-    if (!hasAddedLines(state)) {
+    if (!scan.stdout.trim()) {
       return result
     }
-
-    const reviews: string[] = []
-    // A question two of the sets both ask is reported once, from the first set.
-    const reported = new Set<string>()
-    for (const name of set.sets) {
-      const setPath = `${$.plugin.root}/scripts/${name}`
-      const ask = await $.process.run([`${dirname(setPath)}/jev-ask.py`, '-q', setPath], {
-        stdin: state,
-      })
-      if (ask.exitCode !== 0) {
-        return fail(`jev-ask.py: ${ask.stderr.trim()}`)
-      }
-      const answers = parseJson(ask.stdout)
-      if (!isNumberRecord(answers)) {
-        return fail(`jev-ask.py returned no noul answers: ${ask.stdout.trim()}`)
-      }
-      // Exits 3 when the question set has no gates file.
-      const gatesFile = await $.process.run([
-        'sh',
-        '-c',
-        'test -e "$1" || exit 3; cat "$1"',
-        'sh',
-        setPath.replace(/\.yaml$/, '.gates.json'),
-      ])
-      const gates = gatesFile.exitCode === 3 ? DEFAULT_GATES : parseJson(gatesFile.stdout)
-      if (gatesFile.exitCode !== 0 && gatesFile.exitCode !== 3) {
-        return fail(`reading gates for ${setPath}: ${gatesFile.stderr.trim()}`)
-      }
-      if (!isGates(gates)) {
-        return fail(`gates for ${setPath} are not { threshold, gate, gates }`)
-      }
-      const flagged = Object.entries(answers).filter(
-        ([question]) => isFinding(question, answers, gates) && !reported.has(question),
-      )
-      for (const [question] of flagged) {
-        reported.add(question)
-      }
-      if (flagged.length === 0) {
-        continue
-      }
-      const described = descriptions.get(setPath) ?? (await describeSet((argv, init) => $.process.run(argv, init), setPath))
-      if (described === undefined) {
-        return fail(`jev-ask.py --dry-run could not read the questions in ${setPath}`)
-      }
-      reviews.push(
-        [
-          `jev review of ${path} against ${name}, flagged at >= ${gates.threshold}:`,
-          ...flagged.map(([question, p]) => `- ${question} (${p.toFixed(2)}): ${described[question] ?? ''}`),
-        ].join('\n'),
-      )
-    }
-    if (reviews.length === 0) {
-      return result
-    }
-    return { ...result, context: [...(result.context ?? []), ...reviews] }
+    const summary = scan.stderr.trim().split('\n').at(-1) ?? ''
+    return { ...result, context: [...(result.context ?? []), `jev review of ${path}:\n${scan.stdout}${summary}`] }
   }).catch((_, e, next) => next(e))
 
   on('session.start', async ($, e, next) => {
@@ -440,13 +250,11 @@ export const register: Register = on => {
     await $.tool.register({
       name: SCAN_TOOL,
       description:
-        "Review code and text in a git repository with jev against the user's standards: a file or a " +
-        'directory, every top-level item (Rust fn, method, struct, enum, const; Python function, method, ' +
-        'class, assignment; any other file whole; a directory scans its .rs, .py and .md files), or with ' +
-        '`base` only the hunks of any text file changed since that revision. Every file is reviewed ' +
-        'against the comment, error-text and prose rules; Rust also against the Rust standards. Each item ' +
+        "Review code and text in a git repository with jev against the user's standards: every " +
+        'top-level item of a file or a directory, or with `base` only the hunks changed since that ' +
+        'revision. Each file is reviewed against the rule sets that apply to it. Each item ' +
         'costs one paid call per rule set, and an agent gets one scan: pass ' +
-        'the narrowest path and the base the request names. Returns one JSON line per finding: file, ' +
+        'the narrowest root and path and the base the request names. Returns one JSON line per finding: file, ' +
         'start, end, item, question, probability, asks (what the rule says), violation (what a ' +
         'violation looks like) and accepted (similar code the rule allows); then {"failure": ...} ' +
         'lines for items jev could not review, and a summary line. Findings are unverified: about 1 in 7 items of accepted code gets a false one. ' +
@@ -454,9 +262,14 @@ export const register: Register = on => {
       inputSchema: {
         type: 'object',
         properties: {
+          root: {
+            type: 'string',
+            description:
+              'Absolute path of the directory to review: the rule sets match paths from it, and git runs in it.',
+          },
           path: {
             type: 'string',
-            description: 'Absolute path of a file or a directory inside a git repository.',
+            description: 'A file or a directory relative to root; default: the whole root.',
           },
           base: {
             type: 'string',
@@ -465,7 +278,7 @@ export const register: Register = on => {
               'tree, plus untracked files: "HEAD" for uncommitted changes, "main" for the branch.',
           },
         },
-        required: ['path'],
+        required: ['root'],
       },
     })
     for (const tool of SANDBOX_TOOLS) {
@@ -561,10 +374,14 @@ export const register: Register = on => {
     ) {
       return { deny: `this ${AUDIT_AGENT_TYPE} agent has no scan request from its spawn.` }
     }
+    const root = request !== undefined ? request.root : 'root' in e ? e.root : undefined
     const path = request !== undefined ? request.path : 'path' in e ? e.path : undefined
     const base = request !== undefined ? request.base : 'base' in e ? e.base : undefined
-    if (typeof path !== 'string' || !path.startsWith('/')) {
-      return { deny: 'path must be an absolute path of a file or a directory.' }
+    if (typeof root !== 'string' || !root.startsWith('/')) {
+      return { deny: 'root must be an absolute path of a directory.' }
+    }
+    if (path !== undefined && (typeof path !== 'string' || path.startsWith('/'))) {
+      return { deny: 'path must be a file or a directory relative to root.' }
     }
     if (base !== undefined && typeof base !== 'string') {
       return { deny: 'base must be a git revision.' }
@@ -575,8 +392,11 @@ export const register: Register = on => {
     const scan = await $.process.run(
       [
         `${$.plugin.root}/scripts/jev-scan.py`,
+        '--root',
+        root,
         ...(base === undefined ? [] : ['--base', base]),
-        path,
+        '--',
+        ...(path === undefined ? [] : [path]),
       ],
       { timeoutMs: 600_000 },
     )

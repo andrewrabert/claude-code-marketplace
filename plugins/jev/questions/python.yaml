@@ -1,0 +1,126 @@
+description: >-
+  Python standards: the rules in the user's Python and Textual standards that need judgment.
+  Formatting is left to ruff. The main guard and the PEP 723 block are whole-file checks a diff
+  hunk cannot judge. Not calibrated.
+when:
+  language: [python]
+questions:
+  imported-name:
+    type: noul
+    instructions:
+      task: Judge only the lines that begin with "+" in this Python diff; other lines are context.
+      statement: An added import brings in a function, class or other name from a module instead of the module itself.
+    criteria:
+      'true': >-
+        An added line has the form "from module import name", for example from pathlib import
+        Path or from yarl import URL, so the code uses Path or URL without the module prefix.
+      'false': >-
+        Every added import imports a module, such as import pathlib, import yarl or import
+        os.path, and the code uses names through it, such as pathlib.Path; "from __future__
+        import" and "from package import submodule" where the name is a module are allowed.
+  import-inside-function:
+    type: noul
+    instructions:
+      task: Judge only the lines that begin with "+" in this Python diff; other lines are context.
+      statement: An added import sits inside a function or method instead of at the top of the file.
+    criteria:
+      'true': >-
+        An added import or from-import statement is indented inside a def, a method, or a branch
+        of one, where it could have been at the top of the module.
+      'false': >-
+        Every added import is at module level, or it is a lazy import of textual inside the
+        function that launches a TUI, so the script's other subcommands do not load it.
+  blocking-subprocess:
+    type: noul
+    instructions:
+      task: Judge only the lines that begin with "+" in this Python diff; other lines are context.
+      statement: An added line runs a subprocess with the subprocess or os module instead of asyncio.subprocess.
+    criteria:
+      'true': >-
+        Added code calls subprocess.run, subprocess.Popen, subprocess.check_output,
+        subprocess.call, os.system or os.popen to run another program.
+      'false': >-
+        Every added subprocess is started with asyncio.create_subprocess_exec or
+        asyncio.create_subprocess_shell, or the added code starts no subprocess.
+  non-preferred-library:
+    type: noul
+    instructions:
+      task: Judge only the lines that begin with "+" in this Python diff; other lines are context.
+      statement: Added code uses a library or approach where the user's standard names a preferred package for the task.
+    criteria:
+      'true': >-
+        Added code makes HTTP requests with requests, httpx, urllib.request, aiohttp or
+        http.client instead of httpx2; builds or parses URLs with urllib.parse or string
+        formatting instead of yarl; handles file paths as strings or with os.path instead of
+        pathlib; parses command lines with optparse, click, typer or by reading sys.argv by hand
+        instead of argparse; or writes an MCP server or client with anything but fastmcp.
+      'false': >-
+        Every added use of HTTP, URLs, paths, argument parsing and MCP goes through httpx2, yarl,
+        pathlib, argparse and fastmcp, or the added code does none of these; reading sys.argv[0]
+        to pick a personality of a multi-command script is allowed.
+  untyped-deserialization:
+    type: noul
+    instructions:
+      task: Judge only the lines that begin with "+" in this Python diff; other lines are context.
+      statement: Added code deserializes structured text into dicts and reads them by key instead of into a pydantic model.
+    criteria:
+      'true': >-
+        Added code parses JSON, YAML, TOML or another structured text with json.loads,
+        yaml.safe_load, tomllib.loads or similar, then reads fields with data["key"] or
+        data.get("key"), where a pydantic model would validate the shape and name the fields.
+      'false': >-
+        Added code validates parsed text into a pydantic model, for example with
+        Model.model_validate_json, or passes the parsed value on whole without reading its fields,
+        or deserializes nothing.
+  if-chain-over-match:
+    type: noul
+    instructions:
+      task: Judge only the lines that begin with "+" in this Python diff; other lines are context.
+      statement: Added code branches on one value through an if/elif chain where a match statement would fit.
+    criteria:
+      'true': >-
+        Added code has an if with two or more elif branches that each compare the same variable
+        or expression to a different literal, string, constant or type, such as if command ==
+        "scan": ... elif command == "list": ...
+      'false': >-
+        Added multi-branch conditionals use match, or each branch tests a different condition
+        that match could not express as a pattern, or the added code has fewer than three
+        branches.
+  unmanaged-resource:
+    type: noul
+    instructions:
+      task: Judge only the lines that begin with "+" in this Python diff; other lines are context.
+      statement: Added code opens a file, connection or similar resource without a with statement.
+    criteria:
+      'true': >-
+        Added code calls open(), a client or connection constructor, tempfile.NamedTemporaryFile
+        or another resource that must be closed, and holds it in a variable it closes by hand or
+        not at all, instead of using with or async with.
+      'false': >-
+        Every resource the added code opens is held by a with or async with block, or is read in
+        one call such as pathlib.Path.read_text, or the added code opens no resource.
+  blocking-ui:
+    type: noul
+    instructions:
+      task: Judge only the lines that begin with "+" in this Python diff; other lines are context.
+      statement: Added code in a Textual app does slow work on the event loop instead of in a worker.
+    criteria:
+      'true': >-
+        An added method of a Textual App, Screen or widget, such as an action, an event handler
+        or on_mount, makes a network call, runs a subprocess, reads or writes large files, or does
+        heavy computation directly, not in a method decorated with @work.
+      'false': >-
+        Slow work the added code does runs in a @work worker, or the added code does only instant
+        work such as updating widgets, or the added code is not part of a Textual app.
+  data-access-in-app:
+    type: noul
+    instructions:
+      task: Judge only the lines that begin with "+" in this Python diff; other lines are context.
+      statement: An added Textual App, Screen or widget method runs SQL or HTTP itself instead of calling a data layer.
+    criteria:
+      'true': >-
+        An added method of a Textual App, Screen or widget builds or executes a SQL query, or
+        sends an HTTP request, in its own body.
+      'false': >-
+        The added Textual code gets its data from a data-layer class's query methods, or the
+        added code is not part of a Textual app.

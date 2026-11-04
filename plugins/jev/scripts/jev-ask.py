@@ -3,14 +3,13 @@
 # requires-python = ">=3.14"
 # dependencies = [
 #   "pydantic-settings>=2.16,<3",
-#   "ruamel.yaml>=0.18,<0.19",
+#   "pyyaml>=6,<7",
 #   "typesafe-sdk>=0.7.5,<0.8",
 # ]
 # ///
 """Ask TypeSafe's Jev a question set about the text on stdin and print one answer per question as JSON."""
 
 import argparse
-import io
 import json
 import os
 import pathlib
@@ -18,7 +17,7 @@ import sys
 
 import pydantic
 import pydantic_settings
-import ruamel.yaml
+import yaml
 import typesafe_sdk
 
 # Seconds per request; the SDK's own default of 10 cuts off long states.
@@ -78,8 +77,8 @@ def parse_value(text):
     except ValueError:
         pass
     try:
-        return ruamel.yaml.YAML(typ="safe", pure=True).load(io.StringIO(text))
-    except ruamel.yaml.YAMLError as e:
+        return yaml.safe_load(text)
+    except yaml.YAMLError as e:
         raise UserError(
             f"input is neither valid JSON nor valid YAML: {e}"
         ) from e
@@ -169,11 +168,22 @@ def parse_question(raw):
 
 
 def parse_questions(text):
+    """The questions of a question set: a mapping with `questions` and, for jev-scan.py,
+    `description`, `when` and `decision`."""
     value = parse_value(text)
-    if not isinstance(value, dict):
-        raise UserError("expected a mapping of question name to question")
+    if not isinstance(value, dict) or not isinstance(value.get("questions"), dict):
+        raise UserError(
+            "expected a mapping with `questions`, a mapping of question name to question"
+        )
+    if unknown := sorted(
+        value.keys() - {"description", "when", "decision", "questions"}
+    ):
+        raise UserError(
+            "expected only `description`, `when`, `decision` and `questions`, found "
+            f"{', '.join(map(str, unknown))}"
+        )
     questions = {}
-    for name, raw in sorted(value.items()):
+    for name, raw in sorted(value["questions"].items()):
         try:
             questions[name] = parse_question(raw)
         except UserError as e:

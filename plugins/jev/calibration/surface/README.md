@@ -1,6 +1,6 @@
 # Surface spec calibration
 
-`jellium-menu-refactor-spec.md` is `surface-spec --git main -l rust -e '*test*'` on jellium-desktop `menu-refactor`.
+`surface.yaml` is the surface spec question set, kept out of `questions/` so no scan uses it. `jellium-menu-refactor-spec.md` is `surface-spec --git main -l rust -e '*test*'` on jellium-desktop `menu-refactor`.
 `jellium-menu-refactor-findings.json` holds the surface-v1 findings at >= 0.75 on it, each labeled `yes`, `no` or `unknown` from the user's sessions (`label_source: session`) or their standards (`label_source: standards`), with the evidence quoted.
 
 Description used for the run:

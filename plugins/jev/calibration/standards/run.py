@@ -3,9 +3,10 @@
 # requires-python = ">=3.14"
 # dependencies = [
 #   "pydantic>=2,<3",
+#   "pyyaml>=6,<7",
 # ]
 # ///
-"""Score the standards question sets (scripts/standards.yaml and calibration/history) against the labelled cases in this directory."""
+"""Score the standards question sets (questions/standards.yaml and calibration/history) against the labelled cases in this directory."""
 
 import argparse
 import asyncio
@@ -14,15 +15,17 @@ import pathlib
 import sys
 
 import pydantic
+import yaml
 
 HERE = pathlib.Path(__file__).resolve().parent
 SCRIPTS = HERE.parent.parent / "scripts"
 HISTORY = HERE.parent / "history"
+QUESTIONS = HERE.parent.parent / "questions"
 STANDARDS = HISTORY / "standards-v1.yaml"
 STANDARDS_V2 = HISTORY / "standards-v2.yaml"
 STANDARDS_V3 = HISTORY / "standards-v3.yaml"
 STANDARDS_V4 = HISTORY / "standards-v4.yaml"
-STANDARDS_V5 = SCRIPTS / "standards.yaml"
+STANDARDS_V5 = QUESTIONS / "standards.yaml"
 STANDARDS_V6 = HISTORY / "standards-v6.yaml"
 
 STANDARDS_CATEGORY = {
@@ -53,12 +56,6 @@ STANDARDS_CATEGORY = {
     "comment-restates-code": "comment",
 }
 
-# standards-v2.yaml onward: a rule is suppressed when all of its gate questions are at or above GATE.
-GATES_FILE = json.loads((SCRIPTS / "standards.gates.json").read_text())
-GATES = {rule: tuple(names) for rule, names in GATES_FILE["gates"].items()}
-GATE = GATES_FILE["gate"]
-
-
 class UserError(Exception):
     pass
 
@@ -71,6 +68,25 @@ class Label(pydantic.BaseModel):
 Labels = pydantic.RootModel[dict[str, Label]]
 
 Answers = pydantic.RootModel[dict[str, float]]
+
+
+class Decision(pydantic.BaseModel):
+    gate: float
+    gates: dict[str, tuple[str, ...]]
+
+
+class QuestionSetFile(pydantic.BaseModel):
+    """The part of a question set file this script reads."""
+
+    decision: Decision
+
+
+# standards-v2.yaml onward: a rule is suppressed when all of its gate questions are at or above GATE.
+DECISION = QuestionSetFile.model_validate(
+    yaml.safe_load((QUESTIONS / "standards.yaml").read_text())
+).decision
+GATES = DECISION.gates
+GATE = DECISION.gate
 
 
 def json_dumps(data):
