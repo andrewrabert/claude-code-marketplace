@@ -7,7 +7,7 @@ it is forwarded, to keep only what is listed here:
 
 - system: the billing header, which the API requires.
 - tools: each tool's name and input schema, less the schema's annotations
-  (`description`, `title`, `$schema`).
+  (`description`, `title`, `$schema`); none for the --stop-prompt request.
 - messages: one user message, the latest prompt: the last tool result, or
   before any tool call the first message's text after the marker. No earlier
   turn is carried.
@@ -202,6 +202,10 @@ def rewrite(body, marker, stop_prompt):
     ]
     # The engine's context management edits turns this request no longer carries.
     request.pop("context_management", None)
+    # The stop prompt is answered in text: the request offers no tool.
+    if prompt == stop_prompt:
+        request.pop("tools", None)
+        request.pop("tool_choice", None)
     return json.dumps(request).encode(), prompt != stop_prompt
 
 

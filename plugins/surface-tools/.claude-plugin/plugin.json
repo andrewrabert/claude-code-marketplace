@@ -1,7 +1,7 @@
 {
   "name": "surface-tools",
   "description": "Agent that justifies every node of a surface-spec capture, each request carrying only the current node's prompt and the justify tool's name and schema; logs every exchange through its proxy to JSONL when SURFACE_TOOLS_PROXY_LOG names a file",
-  "version": "2026.11.07.1",
+  "version": "2026.11.07.2",
   "author": {
     "name": "Andrew Rabert"
   }
