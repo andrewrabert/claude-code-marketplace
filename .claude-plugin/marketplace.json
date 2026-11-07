@@ -41,6 +41,11 @@
       "name": "jev",
       "source": "./plugins/jev",
       "description": "Review code, text and surface specs against my standards with jev: a reviewing edit agent, an audit agent, and a scan tool"
+    },
+    {
+      "name": "surface-tools",
+      "source": "./plugins/surface-tools",
+      "description": "Agent that writes a 15-word justification of one surface-spec capture node"
     }
   ]
 }

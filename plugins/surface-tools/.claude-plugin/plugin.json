@@ -1,0 +1,8 @@
+{
+  "name": "surface-tools",
+  "description": "Agent that writes a 15-word justification of one surface-spec capture node",
+  "version": "2026.11.07.0",
+  "author": {
+    "name": "Andrew Rabert"
+  }
+}

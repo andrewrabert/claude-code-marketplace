@@ -12,6 +12,7 @@ Personal Claude Code plugins and skills.
 | `jev`              | Review code, text and surface specs against my standards with jev: a reviewing edit agent, an audit agent, and a scan tool                                                                                                                                                                                                                                                            |
 | `noted`            | noted - https://github.com/andrewrabert/noted                                                                                                                                                                                                                                                                                                                                         |
 | `session-findings` | Mine Claude Code session transcripts into self-contained per-session findings notes (bugs, development friction, reusable learnings) via a deterministic digest pass plus model classification; includes the digest/render scripts and a resumable sweep harness that writes findings.json and findings.md keyed by deterministic session id                                          |
+| `surface-tools`    | Agent that writes a 15-word justification of one surface-spec capture node                                                                                                                                                                                                                                                                                                            |
 | `terse`            | Output styles and skills that control response prose: terse answers, ASD-STE100 Simplified Technical English, ADHD-shaped output, and removal of AI-sounding text                                                                                                                                                                                                                     |
 
 ### andrewrabert-dev
@@ -51,6 +52,10 @@ _No skills._
 | Skill              | Description                                                                                                                                                                                                                                                                                                     |
 |--------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `analyze-sessions` | Use when analyzing Claude Code session history to learn what bugs were fixed, where development got stuck, or what lessons recur — mines transcripts into self-contained per-session findings notes (bugs, friction, learnings) and supports a resumable multi-session sweep whose learnings can feed verifiers |
+
+### surface-tools
+
+_No skills._
 
 ### terse
 

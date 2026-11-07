@@ -24,6 +24,7 @@ justfile                               # Task runner — see `just --list`
 - `bashkit-agents` - sandboxed PR review against local standards
 - `session-findings` - mine session transcripts into findings notes
 - `terse` - output style and skill for terse answers
+- `surface-tools` - agent that justifies one surface-spec capture node
 
 ## Adding Skills
 
