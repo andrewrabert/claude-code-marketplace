@@ -4,6 +4,7 @@ const AGENT_TYPE = 'surface-tools:surface-justify'
 
 const TOOL_NAME = 'justify'
 
+// The limit the agent is told; the justify tool does not check it.
 const MAX_WORDS = 15
 
 // The justify calls one node may fail before the agent is stopped.
@@ -100,8 +101,6 @@ const nodePrompt = async ($: EngineInterface, capture: string, node: number): Pr
   }
   return `${INSTRUCTIONS}\n\n${context.stdout}`
 }
-
-const wordCount = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length
 
 // Ends the run with a failure: the agent is told to stop, and its answer names why.
 const stop = (run: Run, failure: string): { result: string } => {
@@ -262,9 +261,8 @@ export const register: Register = on => {
       return { result: STOP_PROMPT }
     }
     const justification = 'justification' in e ? e.justification : undefined
-    const words = typeof justification === 'string' ? wordCount(justification) : 0
     let written = false
-    if (typeof justification === 'string' && words > 0 && words <= MAX_WORDS) {
+    if (typeof justification === 'string' && justification.trim() !== '') {
       const result = await $.process.run(['surface-spec', 'justify', run.capture, String(run.node), justification.trim()])
       if (result.exitCode !== 0) {
         return stop(run, `surface-spec justify failed on node ${run.node}: ${result.stderr.trim()}`)

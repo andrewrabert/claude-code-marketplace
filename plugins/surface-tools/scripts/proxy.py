@@ -5,7 +5,8 @@ Listens on a free port of 127.0.0.1 and prints `port <N>` once it is ready.
 A Messages API request whose first message holds --marker is rewritten before
 it is forwarded, to keep only what is listed here:
 
-- system: the billing header, which the API requires.
+- system: the billing header, which the API requires; a string system prompt
+  is dropped whole.
 - tools: each tool's name and input schema, less the schema's annotations
   (`description`, `title`, `$schema`); none for the --stop-prompt request.
 - messages: one user message, the latest prompt: the last tool result, or
@@ -190,8 +191,11 @@ def rewrite(body, marker, stop_prompt):
     if not is_marked(request, marker):
         return body, False
     system = request.get("system")
-    if isinstance(system, list):
-        request["system"] = [block for block in system if is_billing(block)]
+    request["system"] = (
+        [block for block in system if is_billing(block)]
+        if isinstance(system, list)
+        else []
+    )
     for tool in request.get("tools", []):
         tool.pop("description", None)
         if "input_schema" in tool:
