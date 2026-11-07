@@ -1,0 +1,8 @@
+{
+  "name": "context-mangle",
+  "description": "Agents whose requests carry only the current prompt: one answers a sequence of prompts, one answers each question of an interactive session",
+  "version": "2026.11.07.0",
+  "author": {
+    "name": "Andrew Rabert"
+  }
+}

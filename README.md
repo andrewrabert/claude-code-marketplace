@@ -8,6 +8,7 @@ Personal Claude Code plugins and skills.
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `andrewrabert-dev` | Development agents                                                                                                                                                                                                                                                                                                                                                                    |
 | `bashkit-agents`   | Review pull requests in a sandbox using local .md files (`$STANDARDS_DIR`, default `${CLAUDE_PLUGIN_DATA}/standards`)                                                                                                                                                                                                                                                                 |
+| `context-mangle`   | Agents whose requests carry only the current prompt: one answers a sequence of prompts, one answers each question of an interactive session                                                                                                                                                                                                                                           |
 | `handoff-verifier` | Self-verification hooks managed by in-session tools: a Stop reminder that forces one more reasoning turn before a turn ends, plus ExitPlanMode and AskUserQuestion gates that block the tool until you self-certify the constraints are met via a token confirm. Each check is set per global, project, or session scope, and the hook concatenates the active scopes broad-to-narrow |
 | `jev`              | Review code, text and surface specs against my standards with jev: a reviewing edit agent, an audit agent, and a scan tool                                                                                                                                                                                                                                                            |
 | `noted`            | noted - https://github.com/andrewrabert/noted                                                                                                                                                                                                                                                                                                                                         |
@@ -26,6 +27,10 @@ Personal Claude Code plugins and skills.
 | `surface-spec` | Surface spec formats. Load before you write a surface spec. It contains the per-surface formats (CLI, HTTP, MCP, Python, Rust, TypeScript).                                                                                                                                                                                                                                                       |
 
 ### bashkit-agents
+
+_No skills._
+
+### context-mangle
 
 _No skills._
 
