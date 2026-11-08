@@ -9,9 +9,9 @@ closing tags in its system prompt (an agent's definition) or its first message
 (a spawn's prompt). Each field is cut from the text it is in, and a later one
 overrides an earlier one key by key. A missing or invalid value is its default.
 
-- system_prompt (a field's only; the hooks apply the config's): a string
-  replaces the system prompt, and "" sends none; the billing header, which the
-  API requires, is kept.
+- system_prompt (a field's only): a string
+  replaces the whole system prompt, the system field and every system message,
+  and "" sends none; the billing header, when the engine sends one, is kept.
 - turns: "all" keeps every message; "latest" keeps one user message, the
   latest prompt: the last user message's last tool result's text, or its text
   that is no reminder, when it has any. With "latest", context_management is
@@ -36,10 +36,17 @@ to that request, in call order: re.sub(pattern, replacement) over its target.
 "messages" rewrites the strings of every message block before the call: text,
 tool result text and tool call input string values; thinking blocks, mangle
 calls and their results are left as they are, and a text block or message left
-with no text is dropped, the first message aside: it is left as EMPTIED_TEXT. "system" rewrites the system prompt's text, its billing
-header aside. A pattern or replacement re rejects is skipped. Nothing reports
+with no text is dropped, the first message aside: it is left as EMPTIED_TEXT. "system" rewrites the whole system prompt, its billing header aside: the
+system field's text and every system message's are joined into one text, the
+substitution is applied to it, and the result becomes the system field after
+its billing header, the system messages dropped. A pattern or replacement re rejects is skipped. Nothing reports
 what a call matched, and every mangle call is sent with an empty input, so the
 model never sees its own pattern, replacement or target.
+
+A POST to CONTROL_PATH configures the proxy instead of being forwarded: its
+body is {"system_prompt": <string or null>}. A string replaces the whole
+system prompt of every later request, as a field's system_prompt does and over
+it; null stops that. The proxy holds it in memory only.
 
 With --log, each exchange with the upstream is appended to that file as a JSON
 line: the request as the engine sent it and as it was forwarded, and the
@@ -110,6 +117,9 @@ EMPTIED_TEXT = " "
 # How many replies the proxy draws for one request that requires a tool call
 # before it passes on one that calls no tool.
 MAX_REPLIES = 3
+
+# The path whose POST configures the proxy (see the module docstring).
+CONTROL_PATH = "/context-mangle/system-prompt"
 
 # Request paths whose JSON body carries tools and a system prompt.
 REWRITTEN_PATHS = ("/v1/messages", "/v1/messages/count_tokens")
@@ -428,6 +438,72 @@ def is_exempt(block, ids):
     return False
 
 
+# The text of a system prompt part: a string, or a list of blocks whose text
+# blocks are joined, the billing header aside.
+def system_text(content):
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return "\n\n".join(
+        block["text"]
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type", "text") == "text"
+        and isinstance(block.get("text"), str)
+        and not is_billing(block)
+    )
+
+
+# Applies subs, in order, to the whole system prompt: the system field's text
+# and every system message's, joined into one text. The result is the system
+# field after its billing header, and the system messages are dropped. Returns
+# the messages left.
+def mangle_system(request, subs):
+    messages = request["messages"]
+    system = request.get("system")
+    parts = [system_text(system)]
+    parts += [
+        system_text(message.get("content"))
+        for message in messages
+        if isinstance(message, dict) and message.get("role") == "system"
+    ]
+    text = "\n\n".join(part for part in parts if part)
+    for sub in subs:
+        text = sub(text)
+    blocks = system if isinstance(system, list) else []
+    kept = [block for block in blocks if is_billing(block)]
+    cached = [
+        block["cache_control"]
+        for block in blocks
+        if isinstance(block, dict)
+        and not is_billing(block)
+        and "cache_control" in block
+    ]
+    if text:
+        block = {"type": "text", "text": text}
+        if cached:
+            block["cache_control"] = cached[-1]
+        kept.append(block)
+    request["system"] = kept
+    return drop_system_messages(request)
+
+
+# Drops the system messages, the system prompt's parts the engine sends in
+# the messages; returns the messages left.
+def drop_system_messages(request):
+    messages = request.get("messages")
+    if not isinstance(messages, list):
+        return messages
+    messages = [
+        message
+        for message in messages
+        if not (isinstance(message, dict) and message.get("role") == "system")
+    ]
+    request["messages"] = messages
+    return messages
+
+
 # Applies the request's mangle calls to it in place; whether it holds any.
 def apply_mangles(request):
     messages = request.get("messages")
@@ -436,19 +512,9 @@ def apply_mangles(request):
     calls, ids = mangle_calls(messages)
     if not ids:
         return False
+    system_subs = [sub for _, target, sub in calls if target == "system"]
     for position, target, sub in calls:
         if target == "system":
-            system = request.get("system")
-            if isinstance(system, str):
-                request["system"] = sub(system)
-            elif isinstance(system, list):
-                for block in system:
-                    if (
-                        isinstance(block, dict)
-                        and isinstance(block.get("text"), str)
-                        and not is_billing(block)
-                    ):
-                        block["text"] = sub(block["text"])
             continue
         for index, message in enumerate(messages[: position[0] + 1]):
             content = (
@@ -464,6 +530,8 @@ def apply_mangles(request):
             for block in content[:end]:
                 if not is_exempt(block, ids):
                     mangle_block(block, sub)
+    if system_subs:
+        messages = mangle_system(request, system_subs)
     for message in messages:
         content = message.get("content") if isinstance(message, dict) else None
         if isinstance(content, list):
@@ -659,14 +727,16 @@ def apply_turns(request, settings):
 
 
 # The rewritten body, and whether its response must call a tool.
-def rewrite(body, tag, config):
+def rewrite(body, tag, config, system_prompt):
     request = json.loads(body)
     if not isinstance(request, dict):
         return body, False
     field = take_settings(request, tag)
     settings = Settings(read_config(config), field)
     changed = field is not None
-    if settings.system_prompt is not None:
+    if system_prompt is None:
+        system_prompt = settings.system_prompt
+    if system_prompt is not None:
         system = request.get("system")
         billing = (
             [block for block in system if is_billing(block)]
@@ -674,10 +744,9 @@ def rewrite(body, tag, config):
             else []
         )
         request["system"] = billing + (
-            [{"type": "text", "text": settings.system_prompt}]
-            if settings.system_prompt
-            else []
+            [{"type": "text", "text": system_prompt}] if system_prompt else []
         )
+        drop_system_messages(request)
         changed = True
     changed = apply_mangles(request) or changed
     changed = apply_turns(request, settings) or changed
@@ -765,7 +834,13 @@ class ExchangeLog:
             )
 
 
-def make_handler(upstream, tag, config, exchange_log):
+# The configuration a control request sets, shared by the handler's threads.
+class Control:
+    def __init__(self):
+        self.system_prompt = None
+
+
+def make_handler(upstream, tag, config, exchange_log, control):
     connection_class = (
         http.client.HTTPSConnection
         if upstream.scheme == "https"
@@ -778,6 +853,9 @@ def make_handler(upstream, tag, config, exchange_log):
             received = self.rfile.read(
                 int(self.headers.get("content-length", 0))
             )
+            if urllib.parse.urlsplit(self.path).path == CONTROL_PATH:
+                self.configure(received)
+                return
             body = received
             expects_tool = False
             if (
@@ -785,7 +863,9 @@ def make_handler(upstream, tag, config, exchange_log):
                 and urllib.parse.urlsplit(self.path).path in REWRITTEN_PATHS
             ):
                 try:
-                    body, expects_tool = rewrite(body, tag, config)
+                    body, expects_tool = rewrite(
+                        body, tag, config, control.system_prompt
+                    )
                 except ValueError as error:
                     print(
                         f"forwarding {self.path} unrewritten: {error}",
@@ -841,6 +921,32 @@ def make_handler(upstream, tag, config, exchange_log):
                     flush=True,
                 )
                 attempt += 1
+
+        # Answers a control request: 204 once applied, else an error status.
+        def configure(self, received):
+            if self.command != "POST":
+                self.answer(405)
+                return
+            try:
+                value = json.loads(received)
+            except ValueError:
+                self.answer(400)
+                return
+            if (
+                not isinstance(value, dict)
+                or set(value) != {"system_prompt"}
+                or not isinstance(value["system_prompt"], (str, type(None)))
+            ):
+                self.answer(400)
+                return
+            control.system_prompt = value["system_prompt"]
+            self.answer(204)
+
+        def answer(self, status):
+            self.send_response(status)
+            self.send_header("content-length", "0")
+            self.send_header("connection", "close")
+            self.end_headers()
 
         # Sends the response on, and answers its body when a log will read it.
         def relay(self, response, data):
@@ -913,6 +1019,7 @@ def main():
             args.tag,
             args.config,
             None if args.log is None else ExchangeLog(args.log),
+            Control(),
         ),
     )
     threading.Thread(

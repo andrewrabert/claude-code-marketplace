@@ -1,7 +1,7 @@
 {
   "name": "context-mangle",
   "description": "Agents whose requests are rewritten by the plugin's proxy: one answers a sequence of prompts with only the current prompt carried, and one answers an interactive session with its system prompt replaced and its reminders left out, and a mangle tool an agent calls to rewrite its own messages or system prompt with a regex",
-  "version": "2026.11.08.1",
+  "version": "2026.11.08.2",
   "author": {
     "name": "Andrew Rabert"
   }

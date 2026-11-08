@@ -32,7 +32,9 @@ _No skills._
 
 ### context-mangle
 
-_No skills._
+| Skill    | Description                                                                      |
+|----------|----------------------------------------------------------------------------------|
+| `mangle` | Call the mangle tool with the target, pattern and replacement given as arguments |
 
 ### handoff-verifier
 

@@ -1,4 +1,4 @@
-import type { EngineInterface, PromptComposeSection, Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 const AGENT_TYPE = 'context-mangle:run'
 
@@ -19,6 +19,19 @@ const SETTINGS_TAG = 'context-mangle'
 // The prompt that ends the run: the run's settings field names it, so the
 // proxy offers its request no tool.
 const STOP_PROMPT = 'Reply with the single word "Done" then stop.'
+
+// The slash command that sets the system prompt of every request the proxy
+// sends, through its control endpoint (CONTROL_PATH in scripts/proxy.py).
+const SYSTEM_PROMPT_COMMAND = 'system-prompt'
+
+const CONTROL_PATH = '/context-mangle/system-prompt'
+
+// The running proxy's URL; undefined while none runs.
+let proxyUrl: string | undefined
+
+// The system prompt /system-prompt set: null leaves each request's own. Held in
+// memory and sent to every proxy this module starts.
+let commandSystemPrompt: string | null = null
 
 // How long the proxy may take to print its port before a spawn is refused.
 const PROXY_START_MS = 10_000
@@ -42,8 +55,6 @@ let proxyStarted: Promise<boolean> | undefined
 
 // The global config at configPath, which lists every value it takes:
 //
-//   system_prompt: null sends the default system prompt; a string replaces it,
-//     as --system-prompt does, and "" sends none.
 //   tools.minimal_descriptions: true blanks every tool's description and
 //     strips the annotations of every tool's input schema (scripts/proxy.py).
 //   tools.only: null offers every tool; a list of names offers only those
@@ -54,12 +65,11 @@ let proxyStarted: Promise<boolean> | undefined
 //     every request.
 //   no_reminders: true leaves every attachment out of every request.
 //
-// The session's start and each render re-read it and write it back with every
+// The session's start and each attachment re-read it and write it back with every
 // missing or invalid value set to its default and every unknown key removed.
 // An agent's settings field (SETTINGS_TAG) overrides its keys for that agent's
 // requests, and adds the ones only a field takes: see scripts/proxy.py.
 type Config = {
-  system_prompt: string | null
   tools: { minimal_descriptions: boolean; only: string[] | null; remove: string[] }
   minimal_reminders: boolean
   no_reminders: boolean
@@ -112,9 +122,6 @@ const MINOR_ATTACHMENTS = new Set([
   'session_context',
 ])
 
-// The section that carries the config's system_prompt.
-const SYSTEM_PROMPT_SECTION = 'context-mangle:system_prompt'
-
 // The config's update in progress: each waits for the one before it, so no
 // write overwrites another's.
 let configUpdate: Promise<unknown> = Promise.resolve()
@@ -133,7 +140,6 @@ const normalizeConfig = (value: unknown): Config => {
   const fields = asObject(value)
   const tools = asObject(fields.tools)
   return {
-    system_prompt: typeof fields.system_prompt === 'string' ? fields.system_prompt : null,
     tools: {
       minimal_descriptions: typeof tools.minimal_descriptions === 'boolean' ? tools.minimal_descriptions : false,
       only: Array.isArray(tools.only) ? tools.only.filter(name => typeof name === 'string') : null,
@@ -269,7 +275,7 @@ async function startProxy($: EngineInterface): Promise<boolean> {
   }
   let ready: (port: string | undefined) => void = () => undefined
   const port = new Promise<string | undefined>(resolve => (ready = resolve))
-  let proxyUrl: string | undefined
+  let url: string | undefined
   // The loop is the proxy's life: it runs on after the spawn that started it.
   void (async () => {
     let stdout = ''
@@ -291,7 +297,10 @@ async function startProxy($: EngineInterface): Promise<boolean> {
     }
     ready(undefined)
     proxyStarted = undefined
-    if (proxyUrl !== undefined && (await $.env.get('ANTHROPIC_BASE_URL')) === proxyUrl) {
+    if (proxyUrl === url) {
+      proxyUrl = undefined
+    }
+    if (url !== undefined && (await $.env.get('ANTHROPIC_BASE_URL')) === url) {
       $.ui.log(`${$.plugin.name}: the proxy exited; API requests go to ${upstream} again.`)
       await $.env.set('ANTHROPIC_BASE_URL', upstream)
     }
@@ -301,10 +310,30 @@ async function startProxy($: EngineInterface): Promise<boolean> {
     $.ui.log(`${$.plugin.name}: the proxy did not start.`)
     return false
   }
-  proxyUrl = `http://127.0.0.1:${started}`
+  url = `http://127.0.0.1:${started}`
+  if (commandSystemPrompt !== null && !(await configureProxy($, url, commandSystemPrompt))) {
+    $.ui.log(`${$.plugin.name}: the new proxy did not take the /${SYSTEM_PROMPT_COMMAND} system prompt.`)
+  }
+  proxyUrl = url
   await $.env.set('CONTEXT_MANGLE_UPSTREAM', upstream)
-  await $.env.set('ANTHROPIC_BASE_URL', proxyUrl)
+  await $.env.set('ANTHROPIC_BASE_URL', url)
   return true
+}
+
+// Sets the system prompt of every request the proxy at url sends; null leaves
+// each request's own. Whether the proxy took it.
+async function configureProxy($: EngineInterface, url: string, systemPrompt: string | null): Promise<boolean> {
+  try {
+    const response = await $.http.fetch(`${url}${CONTROL_PATH}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ system_prompt: systemPrompt }),
+    })
+    return response.ok
+  } catch (error) {
+    $.ui.log(`${$.plugin.name}: configuring the proxy failed: ${String(error)}`, { to: 'debug' })
+    return false
+  }
 }
 
 const ensureProxy = async ($: EngineInterface): Promise<boolean> => {
@@ -323,8 +352,12 @@ const settingsField = (value: object): string =>
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    // Written here too, so the proxy reads a complete config even in a session
-    // whose system prompt the engine never composes (--system-prompt).
+    // Leaves the billing header out of every request's system prompt.
+    await $.env.set('CLAUDE_CODE_ATTRIBUTION_HEADER', '0')
+    // Leaves out the git instructions (the Bash tool's commit and PR guidance)
+    // and the git status snapshot, as includeGitInstructions: false does.
+    await $.env.set('CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS', '1')
+    // Written here, so the proxy reads a complete config from the first request.
     await queueConfigUpdate($)
     await $.tool.register({
       name: TOOL_NAME,
@@ -353,23 +386,16 @@ export const register: Register = on => {
       },
       isDeferred: false,
     })
+    await $.command.register({
+      name: SYSTEM_PROMPT_COMMAND,
+      description: 'Replace the system prompt of every request with the text given; no text restores it',
+      argumentHint: '[text]',
+    })
     // Started here, so an --agent session's first request already goes through it.
     if (!(await ensureProxy($))) {
       $.ui.log(`${$.plugin.name}: its proxy did not start; requests are sent without their settings applied.`)
     }
     return started
-  })
-
-  // Only the default system prompt is composed here: an agent's own replaces it.
-  on('prompt.compose', async ($, e, next) => {
-    const systemPrompt = (await queueConfigUpdate($)).system_prompt
-    if (systemPrompt === null) {
-      return next(e)
-    }
-    const sections: PromptComposeSection[] = systemPrompt
-      ? [{ id: SYSTEM_PROMPT_SECTION, text: systemPrompt, scope: 'session' }]
-      : []
-    return { sections }
   })
 
   on('agent.spawn', { subagentType: AGENT_TYPE }, async ($, e, next) => {
@@ -422,6 +448,19 @@ export const register: Register = on => {
 
   on('tool.check', { tool: `mcp__context-mangle__${MANGLE_TOOL_NAME}` }, () => ({ decision: 'allow' }))
 
+  // The text is held here and sent to the proxy; no model turn runs.
+  on('command.run', { command: SYSTEM_PROMPT_COMMAND }, async ($, e) => {
+    const systemPrompt = e.args.trim() || null
+    if (!(await ensureProxy($)) || proxyUrl === undefined) {
+      return { text: `${$.plugin.name}: its proxy did not start; the system prompt is unchanged.` }
+    }
+    if (!(await configureProxy($, proxyUrl, systemPrompt))) {
+      return { text: `${$.plugin.name}: the proxy did not take the system prompt; it is unchanged.` }
+    }
+    commandSystemPrompt = systemPrompt
+    return { text: systemPrompt === null ? 'System prompt restored.' : 'System prompt replaced.' }
+  }).catch(($, e, next) => (next.called ? next(e) : { text: `${$.plugin.name}: its /${SYSTEM_PROMPT_COMMAND} command failed.` }))
+
   on('turn.complete', (_, e, next) => {
     if (e.agentId !== undefined) {
       runs.delete(e.agentId)
@@ -429,7 +468,12 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // The environment attachment (the working directory, platform, shell and the
+  // notes that ride with them) is left out of every request.
   on('prompt.attachment', async ($, e, next) => {
+    if (e.type === 'environment') {
+      return { text: null }
+    }
     const config = await queueConfigUpdate($)
     if (config.no_reminders || (config.minimal_reminders && MINOR_ATTACHMENTS.has(e.type))) {
       return { text: null }
