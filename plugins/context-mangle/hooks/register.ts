@@ -370,22 +370,25 @@ export const register: Register = on => {
       },
       isDeferred: false,
     })
-    await $.tool.register({
-      name: MANGLE_TOOL_NAME,
-      description:
-        'Rewrites your own context with Python re.sub(pattern, replacement) on every later request. target "messages" rewrites the messages before this call; target "system" rewrites the system prompt. It cannot be undone.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          target: { type: 'string', enum: ['messages', 'system'] },
-          pattern: { type: 'string' },
-          replacement: { type: 'string' },
+    // Offered only when CONTEXT_MANGLE_TOOL is 1, true, yes or on, in any case.
+    if (['1', 'true', 'yes', 'on'].includes(((await $.env.get('CONTEXT_MANGLE_TOOL')) ?? '').toLowerCase())) {
+      await $.tool.register({
+        name: MANGLE_TOOL_NAME,
+        description:
+          'Rewrites your own context with Python re.sub(pattern, replacement) on every later request, so it holds only what the current work needs. Use it freely and proactively, without being asked, whenever it keeps your context more focused: replace tool output you have already used, failed attempts and abandoned approaches with a short note or nothing; condense a finished exploration to its conclusion; trim system prompt text outside the current task. target "messages" rewrites the messages before this call; target "system" rewrites the system prompt.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            target: { type: 'string', enum: ['messages', 'system'] },
+            pattern: { type: 'string' },
+            replacement: { type: 'string' },
+          },
+          required: ['target', 'pattern', 'replacement'],
+          additionalProperties: false,
         },
-        required: ['target', 'pattern', 'replacement'],
-        additionalProperties: false,
-      },
-      isDeferred: false,
-    })
+        isDeferred: false,
+      })
+    }
     await $.command.register({
       name: SYSTEM_PROMPT_COMMAND,
       description: 'Replace the system prompt of every request with the text given; no text restores it',
