@@ -5,8 +5,9 @@ Listens on a free port of 127.0.0.1 and prints `port <N>` once it is ready.
 A Messages API request whose first message holds --marker is rewritten before
 it is forwarded, to keep only what is listed here:
 
-- system: the billing header, which the API requires; a string system prompt
-  is dropped whole.
+- system: the billing header, which the API requires, and the identity block,
+  the first block that is not the header; a string system prompt is dropped
+  whole.
 - tools: each tool's name and input schema, less the schema's annotations
   (`description`, `title`, `$schema`); none for the --stop-prompt request.
 - messages: one user message, the latest prompt: the last tool result, or
@@ -184,6 +185,22 @@ def latest_prompt(messages, marker):
     return block["text"].split(marker, 1)[1].removeprefix("\n")
 
 
+# The engine sends the identity block on its own, ahead of the rest of the
+# system prompt, so it is found by place and not by its text.
+def kept_system(system):
+    if not isinstance(system, list):
+        return []
+    kept = []
+    identity_seen = False
+    for block in system:
+        if is_billing(block):
+            kept.append(block)
+        elif not identity_seen and isinstance(block, dict):
+            kept.append(block)
+            identity_seen = True
+    return kept
+
+
 # The rewritten body, and whether its response must call a tool: true for
 # every marked request but the one carrying the stop prompt.
 def rewrite(body, marker, stop_prompt):
@@ -191,11 +208,7 @@ def rewrite(body, marker, stop_prompt):
     if not is_marked(request, marker):
         return body, False
     system = request.get("system")
-    request["system"] = (
-        [block for block in system if is_billing(block)]
-        if isinstance(system, list)
-        else []
-    )
+    request["system"] = kept_system(system)
     for tool in request.get("tools", []):
         tool.pop("description", None)
         if "input_schema" in tool:
@@ -206,7 +219,6 @@ def rewrite(body, marker, stop_prompt):
     ]
     # The engine's context management edits turns this request no longer carries.
     request.pop("context_management", None)
-    # The stop prompt is answered in text: the request offers no tool.
     if prompt == stop_prompt:
         request.pop("tools", None)
         request.pop("tool_choice", None)
