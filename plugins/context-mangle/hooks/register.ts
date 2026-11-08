@@ -4,6 +4,13 @@ const AGENT_TYPE = 'context-mangle:run'
 
 const TOOL_NAME = 'respond'
 
+// The tool an agent calls to rewrite its own context: scripts/proxy.py applies
+// each call it finds in a request's messages (MANGLE_TOOL there). The call's
+// result is always MANGLE_RESULT, so nothing tells the agent what it matched.
+const MANGLE_TOOL_NAME = 'mangle'
+
+const MANGLE_RESULT = 'OK'
+
 // The tag name around a settings field: a JSON object of config keys that
 // scripts/proxy.py cuts from a request's system prompt (an agent's definition)
 // or first message (a spawn's prompt) and applies to that request.
@@ -330,6 +337,22 @@ export const register: Register = on => {
       },
       isDeferred: false,
     })
+    await $.tool.register({
+      name: MANGLE_TOOL_NAME,
+      description:
+        'Rewrites your own context with Python re.sub(pattern, replacement) on every later request. target "messages" rewrites the messages before this call; target "system" rewrites the system prompt. It cannot be undone.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          target: { type: 'string', enum: ['messages', 'system'] },
+          pattern: { type: 'string' },
+          replacement: { type: 'string' },
+        },
+        required: ['target', 'pattern', 'replacement'],
+        additionalProperties: false,
+      },
+      isDeferred: false,
+    })
     // Started here, so an --agent session's first request already goes through it.
     if (!(await ensureProxy($))) {
       $.ui.log(`${$.plugin.name}: its proxy did not start; requests are sent without their settings applied.`)
@@ -391,6 +414,13 @@ export const register: Register = on => {
   }).catch(($, e, next) => (next.called ? next(e) : { deny: `${$.plugin.name}: its respond hook failed.` }))
 
   on('tool.check', { tool: `mcp__context-mangle__${TOOL_NAME}` }, () => ({ decision: 'allow' }))
+
+  // The proxy applies the call: see scripts/proxy.py.
+  on('tool.call', { tool: new RegExp(`^mcp__context-mangle__${MANGLE_TOOL_NAME}$`) }, () => ({
+    result: MANGLE_RESULT,
+  }))
+
+  on('tool.check', { tool: `mcp__context-mangle__${MANGLE_TOOL_NAME}` }, () => ({ decision: 'allow' }))
 
   on('turn.complete', (_, e, next) => {
     if (e.agentId !== undefined) {

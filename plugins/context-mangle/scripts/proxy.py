@@ -31,6 +31,16 @@ overrides an earlier one key by key. A missing or invalid value is its default.
   times, so the engine sees a reply without a tool call only when the replies
   run out. Every other response is streamed back as it arrives.
 
+Each call of the mangle tool (MANGLE_TOOL) in a request's messages is applied
+to that request, in call order: re.sub(pattern, replacement) over its target.
+"messages" rewrites the strings of every message block before the call: text,
+tool result text and tool call input string values; thinking blocks, mangle
+calls and their results are left as they are, and a text block or message left
+with no text is dropped, the first message aside: it is left as EMPTIED_TEXT. "system" rewrites the system prompt's text, its billing
+header aside. A pattern or replacement re rejects is skipped. Nothing reports
+what a call matched, and every mangle call is sent with an empty input, so the
+model never sees its own pattern, replacement or target.
+
 With --log, each exchange with the upstream is appended to that file as a JSON
 line: the request as the engine sent it and as it was forwarded, and the
 response's status and body. Headers are left out, the credential among them.
@@ -43,6 +53,7 @@ import http.server
 import json
 import os
 import pathlib
+import re
 import sys
 import threading
 import time
@@ -85,6 +96,16 @@ SCHEMA_CHILDREN = frozenset(
         "unevaluatedProperties",
     ]
 )
+
+# The tool whose calls rewrite the context of the requests that carry them.
+MANGLE_TOOL = "mcp__context-mangle__mangle"
+
+# Block types whose content the API checks, so a mangle call leaves them as
+# they are.
+SEALED_BLOCKS = frozenset(["thinking", "redacted_thinking"])
+
+# The text of a first message a mangle call left with none.
+EMPTIED_TEXT = " "
 
 # How many replies the proxy draws for one request that requires a tool call
 # before it passes on one that calls no tool.
@@ -312,6 +333,174 @@ def merged(base, over):
     return result
 
 
+# value with sub applied to every string in it, dict keys aside.
+def substituted(value, sub):
+    if isinstance(value, str):
+        return sub(value)
+    if isinstance(value, list):
+        return [substituted(item, sub) for item in value]
+    if isinstance(value, dict):
+        return {key: substituted(item, sub) for key, item in value.items()}
+    return value
+
+
+# Applies sub to one message block in place.
+def mangle_block(block, sub):
+    kind = block.get("type")
+    if kind == "text" and isinstance(block.get("text"), str):
+        block["text"] = sub(block["text"])
+    elif kind == "tool_use":
+        block["input"] = substituted(block.get("input"), sub)
+    elif kind == "tool_result":
+        content = block.get("content")
+        if isinstance(content, str):
+            block["content"] = sub(content)
+        elif isinstance(content, list):
+            for part in content:
+                if (
+                    isinstance(part, dict)
+                    and part.get("type") == "text"
+                    and isinstance(part.get("text"), str)
+                ):
+                    part["text"] = sub(part["text"])
+            block["content"] = [
+                part
+                for part in content
+                if not (
+                    isinstance(part, dict)
+                    and part.get("type") == "text"
+                    and not part.get("text", "").strip()
+                )
+            ]
+
+
+# The mangle calls in the messages, in order, each as its position, target,
+# and substitution; and the ids of every mangle call, valid or not.
+def mangle_calls(messages):
+    calls = []
+    ids = set()
+    for index, message in enumerate(messages):
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for offset, block in enumerate(content):
+            if not (
+                isinstance(block, dict)
+                and block.get("type") == "tool_use"
+                and block.get("name") == MANGLE_TOOL
+            ):
+                continue
+            ids.add(block.get("id"))
+            fields = block.get("input")
+            fields = fields if isinstance(fields, dict) else {}
+            # Read, then left out, so the model never sees what it asked for.
+            block["input"] = {}
+            target = fields.get("target")
+            pattern = fields.get("pattern")
+            replacement = fields.get("replacement")
+            if target not in ("messages", "system") or not (
+                isinstance(pattern, str) and isinstance(replacement, str)
+            ):
+                continue
+            try:
+                compiled = re.compile(pattern)
+            except re.error:
+                continue
+
+            def sub(text, compiled=compiled, replacement=replacement):
+                try:
+                    return compiled.sub(replacement, text)
+                except re.error:
+                    return text
+
+            calls.append(((index, offset), target, sub))
+    return calls, ids
+
+
+# Whether the block is one a mangle call leaves as it is.
+def is_exempt(block, ids):
+    if not isinstance(block, dict) or block.get("type") in SEALED_BLOCKS:
+        return True
+    if block.get("type") == "tool_use":
+        return block.get("id") in ids
+    if block.get("type") == "tool_result":
+        return block.get("tool_use_id") in ids
+    return False
+
+
+# Applies the request's mangle calls to it in place; whether it holds any.
+def apply_mangles(request):
+    messages = request.get("messages")
+    if not isinstance(messages, list):
+        return False
+    calls, ids = mangle_calls(messages)
+    if not ids:
+        return False
+    for position, target, sub in calls:
+        if target == "system":
+            system = request.get("system")
+            if isinstance(system, str):
+                request["system"] = sub(system)
+            elif isinstance(system, list):
+                for block in system:
+                    if (
+                        isinstance(block, dict)
+                        and isinstance(block.get("text"), str)
+                        and not is_billing(block)
+                    ):
+                        block["text"] = sub(block["text"])
+            continue
+        for index, message in enumerate(messages[: position[0] + 1]):
+            content = (
+                message.get("content") if isinstance(message, dict) else None
+            )
+            if isinstance(content, str):
+                message["content"] = content = [
+                    {"type": "text", "text": content}
+                ]
+            if not isinstance(content, list):
+                continue
+            end = position[1] if index == position[0] else len(content)
+            for block in content[:end]:
+                if not is_exempt(block, ids):
+                    mangle_block(block, sub)
+    for message in messages:
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            message["content"] = [
+                block
+                for block in content
+                if not (
+                    isinstance(block, dict)
+                    and block.get("type") == "text"
+                    and not block.get("text", "").strip()
+                )
+            ]
+    # The first message is kept, as the API takes no request that starts with
+    # an assistant message.
+    if (
+        messages
+        and isinstance(messages[0], dict)
+        and messages[0].get("content") == []
+    ):
+        messages[0]["content"] = [{"type": "text", "text": EMPTIED_TEXT}]
+    request["messages"] = [
+        message
+        for message in messages
+        if not (isinstance(message, dict) and message.get("content") == [])
+    ]
+    system = request.get("system")
+    if isinstance(system, list):
+        request["system"] = [
+            block
+            for block in system
+            if not (isinstance(block, dict) and block.get("text") == "")
+        ]
+    elif system == "":
+        request.pop("system")
+    return True
+
+
 # Cuts every settings field from the request's system prompt and first
 # message; the fields merged in order, or None when it holds none.
 def take_settings(request, tag):
@@ -490,6 +679,7 @@ def rewrite(body, tag, config):
             else []
         )
         changed = True
+    changed = apply_mangles(request) or changed
     changed = apply_turns(request, settings) or changed
     messages = request.get("messages")
     stopped = settings.stop_prompt is not None and (
