@@ -25,7 +25,6 @@ justfile                               # Task runner — see `just --list`
 - `session-findings` - mine session transcripts into findings notes
 - `terse` - output style and skill for terse answers
 - `surface-tools` - agent that justifies every node of a surface-spec capture
-- `context-mangle` - agents whose requests the plugin's proxy rewrites
 
 ## Adding Skills
 

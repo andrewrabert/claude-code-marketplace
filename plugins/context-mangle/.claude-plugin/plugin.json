@@ -1,8 +1,0 @@
-{
-  "name": "context-mangle",
-  "description": "Agents whose requests are rewritten by the plugin's proxy: one answers a sequence of prompts with only the current prompt carried, and a mangle tool an agent calls to rewrite its own messages or system prompt with a regex",
-  "version": "2026.11.08.3",
-  "author": {
-    "name": "Andrew Rabert"
-  }
-}

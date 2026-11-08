@@ -46,11 +46,6 @@
       "name": "surface-tools",
       "source": "./plugins/surface-tools",
       "description": "Agent that justifies every node of a surface-spec capture, each request carrying only the current node's prompt and the justify tool's name and schema; logs every exchange through its proxy to JSONL when SURFACE_TOOLS_PROXY_LOG names a file"
-    },
-    {
-      "name": "context-mangle",
-      "source": "./plugins/context-mangle",
-      "description": "Agents whose requests are rewritten by the plugin's proxy: one answers a sequence of prompts with only the current prompt carried, and a mangle tool an agent calls to rewrite its own messages or system prompt with a regex"
     }
   ]
 }
