@@ -50,7 +50,7 @@
     {
       "name": "context-mangle",
       "source": "./plugins/context-mangle",
-      "description": "Agents whose requests carry only the current prompt: one answers a sequence of prompts, one answers each question of an interactive session"
+      "description": "Agents whose requests are rewritten by the plugin's proxy: one answers a sequence of prompts with only the current prompt carried, and one answers an interactive session with its system prompt replaced and its reminders left out"
     }
   ]
 }

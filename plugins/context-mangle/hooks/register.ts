@@ -1,24 +1,17 @@
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, PromptComposeSection, Register } from 'claude-code'
 
 const AGENT_TYPE = 'context-mangle:run'
 
 const TOOL_NAME = 'respond'
 
-// The tag name around agents/ask.md's prompt: scripts/proxy.py cuts each request
-// whose system prompt holds its opening and closing tags.
-const ASK_TAG = 'context-mangle:ask'
+// The tag name around a settings field: a JSON object of config keys that
+// scripts/proxy.py cuts from a request's system prompt (an agent's definition)
+// or first message (a spawn's prompt) and applies to that request.
+const SETTINGS_TAG = 'context-mangle'
 
-// Opens the agent's spawn prompt, ahead of {"system_prompt", "prompt"}:
-// scripts/proxy.py rewrites each request whose first message holds it.
-const MARKER = '<context-mangle/>'
-
-// The prompt that ends the run: on every other one, the proxy draws the reply
-// again while it calls no tool.
+// The prompt that ends the run: the run's settings field names it, so the
+// proxy offers its request no tool.
 const STOP_PROMPT = 'Reply with the single word "Done" then stop.'
-
-// The attachment types the agent's requests carry, by type; every other
-// attachment, whoever authored it, is left out.
-const KEPT_ATTACHMENTS: ReadonlySet<string> = new Set()
 
 // How long the proxy may take to print its port before a spawn is refused.
 const PROXY_START_MS = 10_000
@@ -36,12 +29,156 @@ type Run = { resultsFile: string; prompt: string; source: Source }
 // The running agents, by agentId.
 const runs = new Map<string, Run>()
 
-// Whether each agentId seen at prompt.attachment is a run agent's.
-const runAgents = new Map<string, boolean>()
-
 // The proxy's start, made at the first spawn: true once API requests go through
 // it. Reset when it exits, so the next spawn starts another.
 let proxyStarted: Promise<boolean> | undefined
+
+// The global config at configPath, which lists every value it takes:
+//
+//   system_prompt: null sends the default system prompt; a string replaces it,
+//     as --system-prompt does, and "" sends none.
+//   tools.minimal_descriptions: true blanks every tool's description and
+//     strips the annotations of every tool's input schema (scripts/proxy.py).
+//   tools.only: null offers every tool; a list of names offers only those
+//     tools (scripts/proxy.py).
+//   tools.remove: the names of the tools left out of every request
+//     (scripts/proxy.py).
+//   minimal_reminders: true leaves every MINOR_ATTACHMENTS reminder out of
+//     every request.
+//   no_reminders: true leaves every attachment out of every request.
+//
+// The session's start and each render re-read it and write it back with every
+// missing or invalid value set to its default and every unknown key removed.
+// An agent's settings field (SETTINGS_TAG) overrides its keys for that agent's
+// requests, and adds the ones only a field takes: see scripts/proxy.py.
+type Config = {
+  system_prompt: string | null
+  tools: { minimal_descriptions: boolean; only: string[] | null; remove: string[] }
+  minimal_reminders: boolean
+  no_reminders: boolean
+}
+
+// The attachment types minimal_reminders leaves out: the IDE's, remote and cloud
+// sessions', the Claude app's and shared memory's, budgets', rarely used modes',
+// the engine's nudges, and session_context (the email and git status).
+const MINOR_ATTACHMENTS = new Set([
+  'selected_lines_in_ide',
+  'selected_lines_in_diff',
+  'opened_file_in_ide',
+  'remote_session_change',
+  'dir_sync_notice',
+  'tool_hosts_notice',
+  'tool_hosts_correction',
+  'claude_app_notice',
+  'artifact_opening_prefetch',
+  'cowork_memory_context',
+  'account_memory_recall',
+  'widget_context_hint',
+  'budget_usd',
+  'token_usage',
+  'output_token_usage',
+  'total_tokens_reminder',
+  'auto_mode',
+  'auto_mode_exit',
+  'ultra_effort_enter',
+  'ultra_effort_exit',
+  'workflow_keyword_request',
+  'workflow_size_guideline_change',
+  'ultrathink_effort',
+  'advisor_tool',
+  'sandbox_instructions',
+  'language',
+  'prefix_delta',
+  'critical_system_reminder',
+  'batching_reminder',
+  'secondary_reminder',
+  'silent_turn_reminder',
+  'elapsed_time_reminder',
+  'output_limit_note',
+  'todo_reminder',
+  'task_reminder',
+  'tool_search_usage_reminder',
+  'bash_output_audience_note',
+  'date',
+  'date_change',
+  'model',
+  'session_context',
+])
+
+// The section that carries the config's system_prompt.
+const SYSTEM_PROMPT_SECTION = 'context-mangle:system_prompt'
+
+// The config's update in progress: each waits for the one before it, so no
+// write overwrites another's.
+let configUpdate: Promise<unknown> = Promise.resolve()
+
+// context-mangle.json in CLAUDE_CONFIG_DIR, else in ~/.claude.
+const configPath = async ($: EngineInterface): Promise<string> => {
+  const base = (await $.env.get('CLAUDE_CONFIG_DIR')) || `${await $.env.get('HOME')}/.claude`
+  return `${base}/context-mangle.json`
+}
+
+const asObject = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+
+// The config read from value, its invalid values replaced by their defaults.
+const normalizeConfig = (value: unknown): Config => {
+  const fields = asObject(value)
+  const tools = asObject(fields.tools)
+  return {
+    system_prompt: typeof fields.system_prompt === 'string' ? fields.system_prompt : null,
+    tools: {
+      minimal_descriptions: typeof tools.minimal_descriptions === 'boolean' ? tools.minimal_descriptions : false,
+      only: Array.isArray(tools.only) ? tools.only.filter(name => typeof name === 'string') : null,
+      remove: Array.isArray(tools.remove) ? tools.remove.filter(name => typeof name === 'string') : [],
+    },
+    minimal_reminders: typeof fields.minimal_reminders === 'boolean' ? fields.minimal_reminders : false,
+    no_reminders: typeof fields.no_reminders === 'boolean' ? fields.no_reminders : false,
+  }
+}
+
+// Updates the config after every update before it, so no write overwrites another's.
+const queueConfigUpdate = ($: EngineInterface): Promise<Config> => {
+  const update = configUpdate.then(() => updateConfig($))
+  configUpdate = update.catch(() => undefined)
+  return update
+}
+
+const formatConfig = (config: Config) => `${JSON.stringify(config, null, 2)}\n`
+
+// The config at configPath, written back when it lacks a value or holds an
+// invalid one. A file that is not JSON is left as it is and read as the defaults.
+async function updateConfig($: EngineInterface): Promise<Config> {
+  const path = await configPath($)
+  let text: string | undefined
+  if (await $.fs.exists(path)) {
+    try {
+      text = await $.fs.read(path)
+    } catch (error) {
+      $.ui.log(`${$.plugin.name}: reading ${path} failed, so the defaults apply: ${String(error)}`)
+      return normalizeConfig(undefined)
+    }
+  }
+  let value: unknown
+  if (text !== undefined) {
+    try {
+      value = JSON.parse(text)
+    } catch {
+      $.ui.log(`${$.plugin.name}: ${path} is not JSON, so the defaults apply and it is left unchanged.`)
+      return normalizeConfig(undefined)
+    }
+  }
+  const config = normalizeConfig(value)
+  const formatted = formatConfig(config)
+  if (text === undefined || JSON.stringify(value) !== JSON.stringify(config)) {
+    try {
+      await $.fs.write(path, formatted)
+    } catch (error) {
+      $.ui.log(`${$.plugin.name}: writing ${path} failed: ${String(error)}`)
+    }
+  }
+  return config
+}
 
 type Spec = { systemPrompt: string; resultsFile: string; source: Source }
 
@@ -113,12 +250,10 @@ async function startProxy($: EngineInterface): Promise<boolean> {
     `${$.plugin.root}/scripts/proxy.py`,
     '--upstream',
     upstream,
-    '--marker',
-    MARKER,
-    '--stop-prompt',
-    STOP_PROMPT,
-    '--ask-tag',
-    ASK_TAG,
+    '--tag',
+    SETTINGS_TAG,
+    '--config',
+    await configPath($),
   ]
   // CONTEXT_MANGLE_PROXY_LOG names the file the proxy appends each exchange to.
   const log = await $.env.get('CONTEXT_MANGLE_PROXY_LOG')
@@ -174,23 +309,16 @@ const ensureProxy = async ($: EngineInterface): Promise<boolean> => {
   return started
 }
 
-const isRunAgent = async ($: EngineInterface, agentId: string): Promise<boolean> => {
-  const known = runAgents.get(agentId)
-  if (known !== undefined) {
-    return known
-  }
-  const info = (await $.agent.list()).find(a => a.id === agentId)
-  if (info === undefined) {
-    return false
-  }
-  const isRun = info.type === AGENT_TYPE
-  runAgents.set(agentId, isRun)
-  return isRun
-}
+// A settings field holding value, its `<` escaped so no text in it closes the tag.
+const settingsField = (value: object): string =>
+  `<${SETTINGS_TAG}>${JSON.stringify(value).replaceAll('<', '\\u003c')}</${SETTINGS_TAG}>`
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
+    // Written here too, so the proxy reads a complete config even in a session
+    // whose system prompt the engine never composes (--system-prompt).
+    await queueConfigUpdate($)
     await $.tool.register({
       name: TOOL_NAME,
       description: 'Respond',
@@ -202,12 +330,23 @@ export const register: Register = on => {
       },
       isDeferred: false,
     })
-    // Started here, so an --agent context-mangle:ask session's first request
-    // already goes through it.
+    // Started here, so an --agent session's first request already goes through it.
     if (!(await ensureProxy($))) {
-      $.ui.log(`${$.plugin.name}: its proxy did not start; context-mangle:ask requests carry every turn.`)
+      $.ui.log(`${$.plugin.name}: its proxy did not start; requests are sent without their settings applied.`)
     }
     return started
+  })
+
+  // Only the default system prompt is composed here: an agent's own replaces it.
+  on('prompt.compose', async ($, e, next) => {
+    const systemPrompt = (await queueConfigUpdate($)).system_prompt
+    if (systemPrompt === null) {
+      return next(e)
+    }
+    const sections: PromptComposeSection[] = systemPrompt
+      ? [{ id: SYSTEM_PROMPT_SECTION, text: systemPrompt, scope: 'session' }]
+      : []
+    return { sections }
   })
 
   on('agent.spawn', { subagentType: AGENT_TYPE }, async ($, e, next) => {
@@ -224,11 +363,10 @@ export const register: Register = on => {
     }
     const spawned = await next({
       ...e,
-      prompt: `${MARKER}${JSON.stringify({ system_prompt: spec.systemPrompt, prompt })}`,
+      prompt: `${settingsField({ system_prompt: spec.systemPrompt, stop_prompt: STOP_PROMPT })}${prompt}`,
     })
     if (spawned.agentId !== undefined) {
       runs.set(spawned.agentId, { resultsFile: spec.resultsFile, prompt, source: spec.source })
-      runAgents.set(spawned.agentId, true)
     }
     return spawned
   }).catch((_, e, next) => (next.called ? next(e) : { deny: `${AGENT_TYPE} spawn check failed.` }))
@@ -262,10 +400,10 @@ export const register: Register = on => {
   })
 
   on('prompt.attachment', async ($, e, next) => {
-    const result = await next(e)
-    if (e.agentId === undefined || KEPT_ATTACHMENTS.has(e.type) || !(await isRunAgent($, e.agentId))) {
-      return result
+    const config = await queueConfigUpdate($)
+    if (config.no_reminders || (config.minimal_reminders && MINOR_ATTACHMENTS.has(e.type))) {
+      return { text: null }
     }
-    return { ...result, text: null }
+    return next(e)
   })
 }

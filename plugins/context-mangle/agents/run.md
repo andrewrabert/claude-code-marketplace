@@ -5,5 +5,15 @@ tools: mcp__context-mangle__respond
 omitClaudeMd: true
 ---
 
-<!-- The plugin's proxy replaces this system prompt with the spawn's
-system_prompt, and each request carries only the current prompt. -->
+<!-- The plugin's proxy applies the settings field below to each request, and
+the spawn's own field, which sets system_prompt and stop_prompt, over it: see
+scripts/proxy.py. -->
+<context-mangle>
+{
+  "turns": "latest",
+  "require_tool_call": true,
+  "tools": {
+    "only": ["mcp__context-mangle__respond"]
+  }
+}
+</context-mangle>

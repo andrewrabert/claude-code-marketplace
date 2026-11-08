@@ -1,32 +1,35 @@
 #!/usr/bin/env python3
-"""Forward Claude Code's API requests upstream, the marked ones cut to one prompt.
+"""Forward Claude Code's API requests upstream, each rewritten by its settings.
 
 Listens on a free port of 127.0.0.1 and prints `port <N>` once it is ready.
-A Messages API request whose first message holds --marker followed by the JSON
-object {"system_prompt": "...", "prompt": "..."} is rewritten before it is
-forwarded, to keep only what is listed here:
 
-- system: the billing header, which the API requires, and system_prompt.
-- tools: each tool's name and input schema, less the schema's annotations
-  (`description`, `title`, `$schema`); none for the --stop-prompt request.
-- messages: one user message, the latest prompt: the last tool result, or
-  before any tool call the object's prompt. No earlier turn is carried.
-- context_management: dropped, as it edits turns the request no longer carries.
+A request's settings are the --config JSON file's, read for each request, with
+any settings field over them: a JSON object between --tag's opening and
+closing tags in its system prompt (an agent's definition) or its first message
+(a spawn's prompt). Each field is cut from the text it is in, and a later one
+overrides an earlier one key by key. A missing or invalid value is its default.
 
-A marked request's reply is buffered whole. Unless its prompt is --stop-prompt,
-a reply that calls no tool is drawn again, up to MAX_REPLIES times, so the
-engine sees a reply without a tool call only when the replies run out.
-
-A Messages API request whose system prompt holds --ask-tag's opening and
-closing tags is rewritten to keep only the current turn:
-
-- system: the billing header, and the text between the tags.
-- messages: from the user's latest prompt (the last user message holding no
-  tool result) on, with every <system-reminder> text block left out.
-- context_management: dropped, as it edits turns the request no longer carries.
-
-Every other request is forwarded unchanged. A response to a request that is
-not marked is streamed back as it arrives.
+- system_prompt (a field's only; the hooks apply the config's): a string
+  replaces the system prompt, and "" sends none; the billing header, which the
+  API requires, is kept.
+- turns: "all" keeps every message; "latest" keeps one user message, the
+  latest prompt: the last user message's last tool result's text, or its text
+  that is no reminder, when it has any. With "latest", context_management is
+  dropped, as it edits turns the request no longer carries.
+- no_reminders: when true, every <system-reminder> text block is left out.
+- tools.only: null offers every tool; a list of names offers only those tools,
+  and [] offers none.
+- tools.remove: the named tools are left out.
+  A tool left out by either is dropped from `tools`, as is a tool_choice naming
+  it, and ToolSearch results that reference it. A request left with no tool
+  carries neither `tools` nor `tool_choice`.
+- tools.minimal_descriptions: when true, every tool's description is dropped
+  and its input schema's annotations (`description`, `title`, `$schema`) with it.
+- stop_prompt: a request whose latest prompt is this text offers no tool.
+- require_tool_call: when true, the reply to a request that offers tools is
+  buffered whole and drawn again while it calls no tool, up to MAX_REPLIES
+  times, so the engine sees a reply without a tool call only when the replies
+  run out. Every other response is streamed back as it arrives.
 
 With --log, each exchange with the upstream is appended to that file as a JSON
 line: the request as the engine sent it and as it was forwarded, and the
@@ -83,8 +86,8 @@ SCHEMA_CHILDREN = frozenset(
     ]
 )
 
-# How many replies the proxy draws for one marked request before it passes on
-# one that calls no tool.
+# How many replies the proxy draws for one request that requires a tool call
+# before it passes on one that calls no tool.
 MAX_REPLIES = 3
 
 # Request paths whose JSON body carries tools and a system prompt.
@@ -143,20 +146,6 @@ def text_blocks(message):
     ]
 
 
-def is_marked(request, marker):
-    messages = request.get("messages")
-    if not isinstance(messages, list) or not messages:
-        return False
-    first = messages[0]
-    return (
-        isinstance(first, dict)
-        and first.get("role") == "user"
-        and any(
-            marker in block.get("text", "") for block in text_blocks(first)
-        )
-    )
-
-
 def result_text(block):
     content = block.get("content")
     if isinstance(content, str):
@@ -170,120 +159,8 @@ def result_text(block):
     return ""
 
 
-# The object after the marker in the first message.
-def spawn_object(messages, marker):
-    block = next(
-        block
-        for block in text_blocks(messages[0])
-        if marker in block.get("text", "")
-    )
-    return json.loads(block["text"].split(marker, 1)[1])
-
-
-# The prompt the next request carries alone: the last tool result, which the
-# hook answers with the agent's next prompt, or before any tool call the spawn
-# object's prompt.
-def latest_prompt(messages, spawn):
-    last = messages[-1]
-    if isinstance(last, dict) and last.get("role") == "user":
-        results = [
-            block
-            for block in last.get("content", [])
-            if isinstance(block, dict) and block.get("type") == "tool_result"
-        ]
-        if results:
-            return result_text(results[-1])
-    return spawn["prompt"]
-
-
-# The rewritten body, and whether its response must call a tool: true for
-# every marked request but the one carrying the stop prompt.
-def rewrite(body, marker, stop_prompt, ask_tag):
-    request = json.loads(body)
-    asked = rewrite_ask(request, ask_tag)
-    if asked is not None:
-        return json.dumps(asked).encode(), False
-    if not is_marked(request, marker):
-        return body, False
-    spawn = spawn_object(request["messages"], marker)
-    system = request.get("system")
-    billing = (
-        [block for block in system if is_billing(block)]
-        if isinstance(system, list)
-        else []
-    )
-    request["system"] = billing + (
-        [{"type": "text", "text": spawn["system_prompt"]}]
-        if spawn["system_prompt"]
-        else []
-    )
-    for tool in request.get("tools", []):
-        tool.pop("description", None)
-        if "input_schema" in tool:
-            tool["input_schema"] = without_annotations(tool["input_schema"])
-    prompt = latest_prompt(request["messages"], spawn)
-    request["messages"] = [
-        {"role": "user", "content": [{"type": "text", "text": prompt}]}
-    ]
-    # The engine's context management edits turns this request no longer carries.
-    request.pop("context_management", None)
-    # The stop prompt is answered in text: the request offers no tool.
-    if prompt == stop_prompt:
-        request.pop("tools", None)
-        request.pop("tool_choice", None)
-    return json.dumps(request).encode(), prompt != stop_prompt
-
-
-# The opening and closing tags of an --ask-tag.
-def ask_tags(tag):
-    return f"<{tag}>", f"</{tag}>"
-
-
-def system_texts(request):
-    system = request.get("system")
-    if isinstance(system, str):
-        return [system]
-    if isinstance(system, list):
-        return [
-            block.get("text", "")
-            for block in system
-            if isinstance(block, dict)
-        ]
-    return []
-
-
-# The text between the tags in the system prompt, or None when it holds none.
-def ask_prompt(request, tag):
-    opening, closing = ask_tags(tag)
-    for text in system_texts(request):
-        start = text.find(opening)
-        end = text.find(closing, start + len(opening))
-        if start != -1 and end != -1:
-            return text[start + len(opening) : end].strip()
-    return None
-
-
 def is_reminder(block):
     return block.get("text", "").lstrip().startswith("<system-reminder>")
-
-
-def has_tool_result(message):
-    content = message.get("content")
-    return isinstance(content, list) and any(
-        isinstance(block, dict) and block.get("type") == "tool_result"
-        for block in content
-    )
-
-
-# Whether a user message holds the user's prompt: text that is no reminder,
-# and no tool result.
-def is_prompt(message):
-    return (
-        isinstance(message, dict)
-        and message.get("role") == "user"
-        and not has_tool_result(message)
-        and any(not is_reminder(block) for block in text_blocks(message))
-    )
 
 
 # The message with its reminder text blocks left out.
@@ -308,32 +185,332 @@ def without_reminders(message):
     }
 
 
-# The request cut to its current turn, when its system prompt holds the ask
-# tags; None otherwise.
-def rewrite_ask(request, tag):
-    prompt = ask_prompt(request, tag)
-    if prompt is None:
-        return None
-    messages = request.get("messages")
-    if not isinstance(messages, list):
-        return None
-    start = max(
-        (index for index, message in enumerate(messages) if is_prompt(message)),
-        default=0,
-    )
-    kept = [without_reminders(message) for message in messages[start:]]
-    request["messages"] = [message for message in kept if message.get("content")]
+# Drops each ToolSearch reference to a tool not allowed from the tool results;
+# a result left with none says so. Whether any was dropped.
+def drop_tool_references(messages, allowed):
+    changed = False
+    for message in messages if isinstance(messages, list) else []:
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not (
+                isinstance(block, dict)
+                and block.get("type") == "tool_result"
+                and isinstance(block.get("content"), list)
+            ):
+                continue
+            kept = [
+                part
+                for part in block["content"]
+                if not (
+                    isinstance(part, dict)
+                    and part.get("type") == "tool_reference"
+                    and not allowed(part.get("tool_name"))
+                )
+            ]
+            if len(kept) == len(block["content"]):
+                continue
+            block["content"] = kept or [
+                {"type": "text", "text": "No matching tools found."}
+            ]
+            changed = True
+    return changed
+
+
+# Applies the config's tools part to the request in place; whether it changed.
+def apply_tool_config(request, minimal, removed, only):
+    tools = request.get("tools")
+    if not isinstance(tools, list):
+        return False
+    changed = False
+
+    def allowed(name):
+        return name not in removed and (only is None or name in only)
+
+    if removed or only is not None:
+        kept = [
+            tool
+            for tool in tools
+            if not (isinstance(tool, dict) and not allowed(tool.get("name")))
+        ]
+        if len(kept) != len(tools):
+            request["tools"] = tools = kept
+            changed = True
+        choice = request.get("tool_choice")
+        # A request left with no tool offers none, as the API takes no
+        # tool_choice without tools.
+        if not tools:
+            request.pop("tools", None)
+            request.pop("tool_choice", None)
+            choice = None
+        if (
+            isinstance(choice, dict)
+            and "name" in choice
+            and not allowed(choice["name"])
+        ):
+            request.pop("tool_choice")
+            changed = True
+        changed = (
+            drop_tool_references(request.get("messages"), allowed) or changed
+        )
+    if minimal:
+        for tool in tools:
+            if not isinstance(tool, dict):
+                continue
+            if tool.pop("description", None) is not None:
+                changed = True
+            schema = tool.get("input_schema")
+            if schema is not None:
+                stripped = without_annotations(schema)
+                if stripped != schema:
+                    tool["input_schema"] = stripped
+                    changed = True
+    return changed
+
+
+# The opening and closing tags of --tag.
+def field_tags(tag):
+    return f"<{tag}>", f"</{tag}>"
+
+
+# The settings fields in text, in order, and the text with them cut. A field
+# that is not a JSON object is cut and reported.
+def take_fields(text, tag):
+    opening, closing = field_tags(tag)
+    fields = []
+    search = 0
+    while (start := text.find(opening, search)) != -1:
+        end = text.find(closing, start + len(opening))
+        if end == -1:
+            break
+        try:
+            field = json.loads(text[start + len(opening) : end])
+        except ValueError as error:
+            field = error
+        if isinstance(field, dict):
+            fields.append(field)
+        else:
+            print(
+                f"ignoring a {tag} field that is not a JSON object: {field}",
+                file=sys.stderr,
+                flush=True,
+            )
+        text = text[:start] + text[end + len(closing) :]
+        search = start
+    return fields, text
+
+
+# base with over's values in its place, objects merged key by key.
+def merged(base, over):
+    result = dict(base)
+    for key, value in over.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = merged(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+# Cuts every settings field from the request's system prompt and first
+# message; the fields merged in order, or None when it holds none.
+def take_settings(request, tag):
+    found = False
+    settings = {}
+
+    def take(text):
+        nonlocal found, settings
+        fields, rest = take_fields(text, tag)
+        if rest != text:
+            found = True
+        for field in fields:
+            settings = merged(settings, field)
+        return rest
+
     system = request.get("system")
-    billing = (
-        [block for block in system if is_billing(block)]
-        if isinstance(system, list)
-        else []
+    if isinstance(system, str):
+        request["system"] = take(system)
+        if not request["system"]:
+            request.pop("system")
+    elif isinstance(system, list):
+        for block in system:
+            if isinstance(block, dict) and isinstance(block.get("text"), str):
+                block["text"] = take(block["text"])
+        request["system"] = [
+            block
+            for block in system
+            if not (isinstance(block, dict) and block.get("text") == "")
+        ]
+    messages = request.get("messages")
+    if isinstance(messages, list) and messages:
+        first = messages[0]
+        if isinstance(first, dict) and first.get("role") == "user":
+            for block in text_blocks(first):
+                block["text"] = take(block.get("text", ""))
+            first["content"] = [
+                block
+                for block in first["content"]
+                if not (
+                    isinstance(block, dict)
+                    and block.get("type") == "text"
+                    and not block.get("text", "").strip()
+                )
+            ]
+    return settings if found else None
+
+
+# The config file's settings: {} when it is missing or not a JSON object.
+def read_config(path):
+    if path is None:
+        return {}
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as error:
+        print(
+            f"reading {path} failed, so its defaults apply: {error}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return {}
+    return config if isinstance(config, dict) else {}
+
+
+class Settings:
+    """A request's settings, each invalid value its default."""
+
+    TURNS = ("all", "latest")
+
+    def __init__(self, config, field):
+        values = merged(
+            {
+                key: config[key]
+                for key in ("tools", "no_reminders")
+                if key in config
+            },
+            field or {},
+        )
+        tools = values.get("tools")
+        tools = tools if isinstance(tools, dict) else {}
+        remove = tools.get("remove")
+        only = tools.get("only")
+        prompt = values.get("system_prompt")
+        stop = values.get("stop_prompt")
+        turns = values.get("turns")
+        self.system_prompt = prompt if isinstance(prompt, str) else None
+        self.turns = turns if turns in self.TURNS else "all"
+        self.no_reminders = values.get("no_reminders") is True
+        self.minimal_descriptions = tools.get("minimal_descriptions") is True
+        self.removed = frozenset(
+            name
+            for name in (remove if isinstance(remove, list) else [])
+            if isinstance(name, str)
+        )
+        self.only = (
+            frozenset(name for name in only if isinstance(name, str))
+            if isinstance(only, list)
+            else None
+        )
+        self.stop_prompt = stop if isinstance(stop, str) else None
+        self.require_tool_call = values.get("require_tool_call") is True
+
+
+# The request's latest prompt, from its last user message (the engine may send
+# a system message after it): its last tool result's text, or its text that is
+# no reminder; None when it has no user message.
+def latest_prompt(messages):
+    last = next(
+        (
+            message
+            for message in reversed(messages)
+            if isinstance(message, dict) and message.get("role") == "user"
+        ),
+        None,
     )
-    request["system"] = billing + (
-        [{"type": "text", "text": prompt}] if prompt else []
+    if last is None:
+        return None
+    content = last.get("content")
+    results = [
+        block
+        for block in (content if isinstance(content, list) else [])
+        if isinstance(block, dict) and block.get("type") == "tool_result"
+    ]
+    if results:
+        return result_text(results[-1])
+    return "\n".join(
+        block.get("text", "")
+        for block in text_blocks(last)
+        if not is_reminder(block)
     )
-    request.pop("context_management", None)
-    return request
+
+
+# Applies the settings' turns and no_reminders to the messages in place;
+# whether they changed.
+def apply_turns(request, settings):
+    messages = request.get("messages")
+    if not isinstance(messages, list) or (
+        settings.turns == "all" and not settings.no_reminders
+    ):
+        return False
+    if settings.turns == "latest":
+        prompt = latest_prompt(messages)
+        if not prompt:
+            return False
+        request["messages"] = [
+            {"role": "user", "content": [{"type": "text", "text": prompt}]}
+        ]
+        request.pop("context_management", None)
+    else:
+        kept = [without_reminders(message) for message in messages]
+        request["messages"] = [
+            message for message in kept if message.get("content")
+        ]
+    return True
+
+
+# The rewritten body, and whether its response must call a tool.
+def rewrite(body, tag, config):
+    request = json.loads(body)
+    if not isinstance(request, dict):
+        return body, False
+    field = take_settings(request, tag)
+    settings = Settings(read_config(config), field)
+    changed = field is not None
+    if settings.system_prompt is not None:
+        system = request.get("system")
+        billing = (
+            [block for block in system if is_billing(block)]
+            if isinstance(system, list)
+            else []
+        )
+        request["system"] = billing + (
+            [{"type": "text", "text": settings.system_prompt}]
+            if settings.system_prompt
+            else []
+        )
+        changed = True
+    changed = apply_turns(request, settings) or changed
+    messages = request.get("messages")
+    stopped = settings.stop_prompt is not None and (
+        latest_prompt(messages if isinstance(messages, list) else [])
+        == settings.stop_prompt
+    )
+    if stopped:
+        request.pop("tools", None)
+        request.pop("tool_choice", None)
+        changed = True
+    changed = (
+        apply_tool_config(
+            request,
+            settings.minimal_descriptions,
+            settings.removed,
+            settings.only,
+        )
+        or changed
+    )
+    expects_tool = settings.require_tool_call and bool(request.get("tools"))
+    return (json.dumps(request).encode() if changed else body), expects_tool
 
 
 # Whether a Messages API response, a JSON body or an event stream, calls a tool.
@@ -398,7 +575,7 @@ class ExchangeLog:
             )
 
 
-def make_handler(upstream, marker, stop_prompt, ask_tag, exchange_log):
+def make_handler(upstream, tag, config, exchange_log):
     connection_class = (
         http.client.HTTPSConnection
         if upstream.scheme == "https"
@@ -418,9 +595,7 @@ def make_handler(upstream, marker, stop_prompt, ask_tag, exchange_log):
                 and urllib.parse.urlsplit(self.path).path in REWRITTEN_PATHS
             ):
                 try:
-                    body, expects_tool = rewrite(
-                        body, marker, stop_prompt, ask_tag
-                    )
+                    body, expects_tool = rewrite(body, tag, config)
                 except ValueError as error:
                     print(
                         f"forwarding {self.path} unrewritten: {error}",
@@ -519,19 +694,14 @@ def main():
         "--upstream", required=True, help="the API base URL to forward to"
     )
     parser.add_argument(
-        "--marker",
+        "--tag",
         required=True,
-        help="the text whose presence in a request's first message marks it for rewriting",
+        help="the tag name around a settings field",
     )
     parser.add_argument(
-        "--stop-prompt",
-        required=True,
-        help="the prompt that ends the run: on every other one, a reply that calls no tool is drawn again",
-    )
-    parser.add_argument(
-        "--ask-tag",
-        required=True,
-        help="the tag name whose opening and closing tags in a request's system prompt mark it to be cut to its current turn",
+        "--config",
+        type=pathlib.Path,
+        help="the JSON config file whose settings rewrite every request",
     )
     parser.add_argument(
         "--log",
@@ -539,10 +709,8 @@ def main():
         help="append each exchange with the upstream to this JSON lines file",
     )
     args = parser.parse_args()
-    if not args.marker:
-        parser.error("--marker must not be empty")
-    if not args.ask_tag:
-        parser.error("--ask-tag must not be empty")
+    if not args.tag:
+        parser.error("--tag must not be empty")
     upstream = urllib.parse.urlsplit(args.upstream)
     if upstream.scheme not in ("http", "https") or not upstream.netloc:
         parser.error(
@@ -552,9 +720,8 @@ def main():
         ("127.0.0.1", 0),
         make_handler(
             upstream,
-            args.marker,
-            args.stop_prompt,
-            args.ask_tag,
+            args.tag,
+            args.config,
             None if args.log is None else ExchangeLog(args.log),
         ),
     )
