@@ -1,0 +1,8 @@
+{
+  "name": "jevrev",
+  "description": "Review code with jev: a review agent that confirms or rejects each finding of a pull request or local git dir and posts the confirmed ones on the pull request, and an edit agent whose every write jev reviews",
+  "version": "2026.11.22.0",
+  "author": {
+    "name": "Andrew Rabert"
+  }
+}

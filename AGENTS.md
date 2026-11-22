@@ -18,6 +18,7 @@ justfile                               # Task runner — see `just --list`
 
 ## Plugins
 
+- `jevrev` - review and edit agents that review code with jev
 - `jev` - code, text and surface spec review against standards with jev
 - `handoff-verifier` - self-verification hooks managed by in-session tools (a mod)
 - `noted` - skills for the noted CLI

@@ -46,6 +46,11 @@
       "name": "surface-tools",
       "source": "./plugins/surface-tools",
       "description": "Agent that justifies every node of a surface-spec capture, each request carrying only the current node's prompt and the justify tool's name and schema; logs every exchange through its proxy to JSONL when SURFACE_TOOLS_PROXY_LOG names a file"
+    },
+    {
+      "name": "jevrev",
+      "source": "./plugins/jevrev",
+      "description": "Review code with jev: a review agent that confirms or rejects each finding of a pull request or local git dir and posts the confirmed ones on the pull request, and an edit agent whose every write jev reviews"
     }
   ]
 }

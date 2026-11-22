@@ -10,6 +10,7 @@ Personal Claude Code plugins and skills.
 | `bashkit-agents`   | Review pull requests in a sandbox using local .md files (`$STANDARDS_DIR`, default `${CLAUDE_PLUGIN_DATA}/standards`)                                                                                                                                                                                                                                                                 |
 | `handoff-verifier` | Self-verification hooks managed by in-session tools: a Stop reminder that forces one more reasoning turn before a turn ends, plus ExitPlanMode and AskUserQuestion gates that block the tool until you self-certify the constraints are met via a token confirm. Each check is set per global, project, or session scope, and the hook concatenates the active scopes broad-to-narrow |
 | `jev`              | Review code, text and surface specs against my standards with jev: a reviewing edit agent, an audit agent, and a scan tool                                                                                                                                                                                                                                                            |
+| `jevrev`           | Review code with jev: a review agent that confirms or rejects each finding of a pull request or local git dir and posts the confirmed ones on the pull request, and an edit agent whose every write jev reviews                                                                                                                                                                       |
 | `noted`            | noted - https://github.com/andrewrabert/noted                                                                                                                                                                                                                                                                                                                                         |
 | `session-findings` | Mine Claude Code session transcripts into self-contained per-session findings notes (bugs, development friction, reusable learnings) via a deterministic digest pass plus model classification; includes the digest/render scripts and a resumable sweep harness that writes findings.json and findings.md keyed by deterministic session id                                          |
 | `surface-tools`    | Agent that justifies every node of a surface-spec capture, each request carrying only the current node's prompt and the justify tool's name and schema; logs every exchange through its proxy to JSONL when SURFACE_TOOLS_PROXY_LOG names a file                                                                                                                                      |
@@ -34,6 +35,10 @@ _No skills._
 _No skills._
 
 ### jev
+
+_No skills._
+
+### jevrev
 
 _No skills._
 
